@@ -56,6 +56,8 @@ export default function QuizPage() {
       mcq: 0,
       multiple_select: 0,
       short_answer: 0,
+      nclex: 0,
+      engineering: 0,
     };
     allQuestions.forEach((q) => {
       const type = q.question_type || "mcq";

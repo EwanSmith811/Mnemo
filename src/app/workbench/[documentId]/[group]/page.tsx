@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import type { WorkbenchContent, InquiryQuestion, FadedBlank, EngineeringProblem, GlossaryEntry } from "@/types";
+import type { WorkbenchContent, InquiryQuestion, FadedBlank, EngineeringProblem, GlossaryEntry, NclexQuestion, StudyMode } from "@/types";
+import NclexRationaleCard from "@/components/NclexRationaleCard";
 
 // ── Client-side keyword validation ─────────────────────────────────────
 // Multi-layer local check: exact match → stemmed keyword match → bigram
@@ -918,8 +919,129 @@ function EngineerStage({
   );
 }
 
+function NursingStage({
+  questions,
+  onComplete,
+}: {
+  questions: NclexQuestion[];
+  onComplete: () => void;
+}) {
+  const [currentQ, setCurrentQ] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [showResult, setShowResult] = useState(false);
+  const [completed, setCompleted] = useState(0);
+
+  const question = questions[currentQ];
+  const choiceLabels = ["A", "B", "C", "D"];
+
+  const handleSelect = (index: number) => {
+    if (showResult) return;
+    setSelectedAnswer(index);
+    setShowResult(true);
+    if (index === question.correct_answer) {
+      setCompleted((value) => value + 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentQ < questions.length - 1) {
+      setCurrentQ((value) => value + 1);
+      setSelectedAnswer(null);
+      setShowResult(false);
+    } else {
+      onComplete();
+    }
+  };
+
+  return (
+    <div className="rounded-2xl glass p-6 animate-fade-in-up">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-zinc-100">NCLEX Practice</h2>
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
+            CLINICAL JUDGMENT
+          </span>
+        </div>
+        <span className="text-sm text-zinc-500">
+          Question {currentQ + 1} of {questions.length}
+        </span>
+      </div>
+
+      <div className="mb-6 flex items-center gap-2">
+        {questions.map((_, i) => (
+          <div
+            key={i}
+            className={`h-1.5 flex-1 rounded-full transition-all ${
+              i < completed ? "bg-emerald-400" : i === currentQ ? "bg-emerald-400/50" : "bg-white/5"
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="mb-4 rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300/80">Scenario</p>
+        <p className="text-sm leading-relaxed text-zinc-300">{question.scenario}</p>
+      </div>
+
+      <h3 className="mb-4 text-base font-semibold text-zinc-100">{question.question}</h3>
+
+      <div className="space-y-3">
+        {question.choices.map((choice, i) => {
+          let style = "glass glass-hover";
+          if (showResult) {
+            if (i === question.correct_answer) {
+              style = "border-emerald-500/40 bg-emerald-500/10 glow-green";
+            } else if (i === selectedAnswer) {
+              style = "border-red-500/40 bg-red-500/10";
+            } else {
+              style = "glass opacity-40";
+            }
+          }
+
+          return (
+            <button
+              key={i}
+              onClick={() => handleSelect(i)}
+              disabled={showResult}
+              className={`flex w-full items-center gap-3 rounded-xl p-4 text-left transition-all ${style}`}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
+                {choiceLabels[i]}
+              </span>
+              <span className="text-zinc-200">{choice}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {showResult && (
+        <div className="mt-6 animate-fade-in">
+          <div
+            className={`rounded-xl border px-4 py-3 ${
+              selectedAnswer === question.correct_answer
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                : "border-red-500/20 bg-red-500/10 text-red-400"
+            }`}
+          >
+            {selectedAnswer === question.correct_answer ? "Correct clinical judgment." : "Review the rationale before moving on."}
+          </div>
+          <div className="mt-4">
+            <NclexRationaleCard text={question.rationale} variant="workbench" />
+          </div>
+          <button
+            onClick={handleNext}
+            className="mt-4 w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+          >
+            {currentQ < questions.length - 1 ? "Next NCLEX Question" : "Complete"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Complete Stage ───────────────────────────────────────────────────
-function CompleteStage({ groupName, hasEngineer }: { groupName: string; hasEngineer: boolean }) {
+function CompleteStage({ groupName, hasModeStage }: { groupName: string; hasModeStage: boolean }) {
   return (
     <div className="rounded-2xl glass p-8 text-center animate-fade-in-up">
       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10">
@@ -929,7 +1051,7 @@ function CompleteStage({ groupName, hasEngineer }: { groupName: string; hasEngin
       </div>
       <h2 className="mb-2 text-xl font-bold text-zinc-100">Group Mastered!</h2>
       <p className="text-sm text-zinc-500">
-        You&apos;ve completed all {hasEngineer ? "4" : "3"} stages for the <strong className="text-zinc-300">{groupName}</strong> concept group.
+        You&apos;ve completed all {hasModeStage ? "4" : "3"} stages for the <strong className="text-zinc-300">{groupName}</strong> concept group.
       </p>
     </div>
   );
@@ -948,18 +1070,22 @@ export default function WorkbenchGroupDeepDive() {
   const [error, setError] = useState<string | null>(null);
   const [activeStage, setActiveStage] = useState(1);
   const [currentStage, setCurrentStage] = useState(1);
-  const [engineerMode, setEngineerMode] = useState(false);
 
+  const studyMode: StudyMode = content?.study_mode ?? "engineers";
   const hasEngineerProblems = (content?.engineering_problems ?? []).length > 0;
-  const hasEngineerStage = engineerMode && hasEngineerProblems;
-  // Total stages: B=1, I=2, F=3, E=4 (optional), Complete = lastStage+1
-  const completeStageNum = hasEngineerStage ? 5 : 4;
+  const hasNclexQuestions = (content?.nclex_questions ?? []).length > 0;
+  const hasEngineerStage = studyMode === "engineers" && hasEngineerProblems;
+  const hasNclexStage = studyMode === "nursing" && hasNclexQuestions;
+  const hasModeStage = hasEngineerStage || hasNclexStage;
+  const modeStageLabel = hasNclexStage ? "NCLEX" : "Engineer";
+  const modeStageColor = hasNclexStage ? "emerald" : "amber";
+  const completeStageNum = hasModeStage ? 5 : 4;
 
   const stages = [
     { label: "Brief", num: 1, color: "blue" },
     { label: "Inquiry", num: 2, color: "purple" },
     { label: "Fade", num: 3, color: "emerald" },
-    ...(hasEngineerStage ? [{ label: "Engineer", num: 4, color: "amber" }] : []),
+    ...(hasModeStage ? [{ label: modeStageLabel, num: 4, color: modeStageColor }] : []),
   ];
 
   useEffect(() => {
@@ -973,6 +1099,11 @@ export default function WorkbenchGroupDeepDive() {
         const data: WorkbenchContent = await res.json();
         setContent(data);
         setInquiryProgress(makeInquiryProgress(data.inquiry_questions.length));
+        const loadedStudyMode: StudyMode = data.study_mode ?? "engineers";
+        const loadedHasModeStage =
+          (loadedStudyMode === "engineers" && (data.engineering_problems?.length ?? 0) > 0) ||
+          (loadedStudyMode === "nursing" && (data.nclex_questions?.length ?? 0) > 0);
+        const loadedCompleteStageNum = loadedHasModeStage ? 5 : 4;
 
         // Fetch mastery to resume from last stage
         const overviewRes = await fetch(`/api/workbench/${documentId}/overview`);
@@ -981,8 +1112,8 @@ export default function WorkbenchGroupDeepDive() {
           const group = overview.find((g: { group: string }) => g.group === groupParam);
           if (group) {
             if (group.stageCompleted >= 3) {
-              setCurrentStage(completeStageNum);
-              setActiveStage(completeStageNum);
+              setCurrentStage(loadedCompleteStageNum);
+              setActiveStage(loadedCompleteStageNum);
             } else if (group.stageCompleted >= 1) {
               setCurrentStage(group.stageCompleted + 1);
               setActiveStage(group.stageCompleted + 1);
@@ -1031,7 +1162,7 @@ export default function WorkbenchGroupDeepDive() {
   };
 
   const handleFadeComplete = async () => {
-    if (hasEngineerStage) {
+    if (hasModeStage) {
       await updateMastery(2); // Don't mark as fully complete yet
       setCurrentStage(4);
       setActiveStage(4);
@@ -1042,7 +1173,7 @@ export default function WorkbenchGroupDeepDive() {
     }
   };
 
-  const handleEngineerComplete = async () => {
+  const handleModeStageComplete = async () => {
     await updateMastery(3);
     setCurrentStage(completeStageNum);
     setActiveStage(completeStageNum);
@@ -1098,19 +1229,15 @@ export default function WorkbenchGroupDeepDive() {
           Back to workbench
         </Link>
 
-        {/* Group title + Engineer's mode toggle */}
         <div className="mb-2 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-zinc-100">{groupParam}</h1>
-          {hasEngineerProblems && (
-            <button
-              onClick={() => setEngineerMode((v) => !v)}
-              className={`rounded-xl glass px-3 py-1.5 text-xs font-medium transition-all glass-hover ${
-                engineerMode ? "text-amber-400 border-amber-500/20" : "text-zinc-500"
-              }`}
-            >
-              {engineerMode ? "Engineer ON" : "Engineer Mode"}
-            </button>
-          )}
+          <span className={`rounded-xl border px-3 py-1.5 text-xs font-medium ${
+            studyMode === "nursing"
+              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+              : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+          }`}>
+            {studyMode === "nursing" ? "Nursing Mode" : "Engineers Mode"}
+          </span>
         </div>
 
         {/* Concept list */}
@@ -1170,7 +1297,7 @@ export default function WorkbenchGroupDeepDive() {
             questions={content.inquiry_questions}
             documentId={documentId}
             onComplete={handleInquiryComplete}
-            hasEngineerStage={hasEngineerStage}
+            hasEngineerStage={hasModeStage}
             progress={inquiryProgress}
             onProgressChange={setInquiryProgress}
           />
@@ -1203,16 +1330,22 @@ export default function WorkbenchGroupDeepDive() {
           <FadeStage
             blanks={content.faded_blanks}
             onComplete={handleFadeComplete}
-            hasEngineerStage={hasEngineerStage}
+            hasEngineerStage={hasModeStage}
           />
         )}
         {activeStage === 4 && hasEngineerStage && !isReviewing && (
           <EngineerStage
             problems={content.engineering_problems}
-            onComplete={handleEngineerComplete}
+            onComplete={handleModeStageComplete}
           />
         )}
-        {activeStage === completeStageNum && <CompleteStage groupName={groupParam} hasEngineer={hasEngineerStage} />}
+        {activeStage === 4 && hasNclexStage && !isReviewing && (
+          <NursingStage
+            questions={content.nclex_questions}
+            onComplete={handleModeStageComplete}
+          />
+        )}
+        {activeStage === completeStageNum && <CompleteStage groupName={groupParam} hasModeStage={hasModeStage} />}
 
         {/* Back to hub link */}
         {activeStage === completeStageNum && (

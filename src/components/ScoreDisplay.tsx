@@ -1,6 +1,7 @@
 "use client";
 
 import type { QuizQuestion, QuizAnswer } from "@/types";
+import NclexRationaleCard from "./NclexRationaleCard";
 
 interface ScoreDisplayProps {
   score: {
@@ -88,6 +89,8 @@ export default function ScoreDisplay({ score, questions }: ScoreDisplayProps) {
                     {qType === "mcq" && "MCQ"}
                     {qType === "multiple_select" && "Multi-Select"}
                     {qType === "short_answer" && "Short Answer"}
+                    {qType === "nclex" && "NCLEX"}
+                    {qType === "engineering" && "Engineering"}
                   </span>
                   <p className="mt-1 font-medium text-zinc-200">
                     {index + 1}. {question.question}
@@ -147,10 +150,44 @@ export default function ScoreDisplay({ score, questions }: ScoreDisplayProps) {
                 </>
               )}
 
+              {qType === "nclex" && (
+                <>
+                  {answer && !isCorrect && (
+                    <p className="ml-7 text-sm text-red-400">
+                      Your answer: {choiceLabels[answer.selected_answer]}.{" "}
+                      {question.choices[answer.selected_answer]}
+                    </p>
+                  )}
+                  <p className="ml-7 text-sm text-emerald-400">
+                    Correct: {choiceLabels[question.correct_answer]}.{" "}
+                    {question.choices[question.correct_answer]}
+                  </p>
+                </>
+              )}
+
+              {qType === "engineering" && (
+                <>
+                  {answer && !isCorrect && (
+                    <p className="ml-7 text-sm text-red-400">
+                      Your answer: {answer.typed_answer || "(empty)"}
+                    </p>
+                  )}
+                  <p className="ml-7 text-sm text-emerald-400">
+                    Correct: {question.numeric_answer} {question.answer_unit}
+                  </p>
+                </>
+              )}
+
               {question.explanation && (
-                <p className="ml-7 mt-1 text-sm text-zinc-500">
-                  {question.explanation}
-                </p>
+                qType === "nclex" ? (
+                  <div className="ml-7 mt-3">
+                    <NclexRationaleCard text={question.explanation} variant="review" />
+                  </div>
+                ) : (
+                  <p className="ml-7 mt-1 text-sm text-zinc-500">
+                    {question.explanation}
+                  </p>
+                )
               )}
             </div>
           );

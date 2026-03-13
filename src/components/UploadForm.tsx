@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { StudyMode } from "@/types";
 
 interface UploadFormProps {
   onUploadComplete: () => void;
@@ -11,7 +13,13 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -26,27 +34,39 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    if (file) prepareFile(file);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+    if (file) prepareFile(file);
   };
 
-  const uploadFile = (file: File) => {
+  const prepareFile = (file: File) => {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext !== "pdf" && ext !== "pptx") {
       setError("Only PDF and PPTX files are supported.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
     setError(null);
+    setPendingFile(file);
+  };
+
+  const closeModeModal = () => {
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const uploadFile = (file: File, studyMode: StudyMode) => {
+    setPendingFile(null);
     setUploadPhase("uploading");
     setUploadProgress(0);
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("studyMode", studyMode);
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
@@ -97,8 +117,56 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
 
   const isActive = uploadPhase !== "idle";
 
+  const modal = pendingFile ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-[8px] px-4">
+          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+            <div className="mb-5">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
+                Choose Study Mode
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-zinc-100">
+                How should we build this document?
+              </h2>
+              <p className="mt-2 text-sm text-zinc-400">
+                {pendingFile.name} will be processed with a study flow tailored to the mode you pick.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => uploadFile(pendingFile, "nursing")}
+                className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-left transition-all hover:border-emerald-400/40 hover:bg-emerald-500/15"
+              >
+                <p className="text-sm font-semibold text-emerald-300">Nursing</p>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Adds NCLEX-style practice to the workbench and quiz.
+                </p>
+              </button>
+
+              <button
+                onClick={() => uploadFile(pendingFile, "engineers")}
+                className="w-full rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4 text-left transition-all hover:border-amber-400/40 hover:bg-amber-500/15"
+              >
+                <p className="text-sm font-semibold text-amber-300">Engineers</p>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Keeps calculation-heavy workout questions in workbench and quiz.
+                </p>
+              </button>
+            </div>
+
+            <button
+              onClick={closeModeModal}
+              className="mt-4 w-full rounded-2xl border border-white/10 px-4 py-3 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null;
+
   return (
     <div>
+      {mounted && createPortal(modal, document.body)}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

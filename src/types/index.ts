@@ -2,6 +2,7 @@ export interface Document {
   id: string;
   filename: string;
   file_type: "pdf" | "pptx";
+  study_mode: StudyMode;
   file_size_bytes: number | null;
   extracted_text_length: number | null;
   flashcard_count: number;
@@ -27,7 +28,14 @@ export interface Flashcard {
   created_at: string;
 }
 
-export type QuestionType = "mcq" | "multiple_select" | "short_answer";
+export type StudyMode = "nursing" | "engineers";
+
+export type QuestionType =
+  | "mcq"
+  | "multiple_select"
+  | "short_answer"
+  | "nclex"
+  | "engineering";
 
 export interface QuizQuestion {
   id: string;
@@ -38,6 +46,9 @@ export interface QuizQuestion {
   correct_answer: number;
   correct_answers: number[] | null;
   correct_answer_text: string | null;
+  numeric_answer: number | null;
+  answer_tolerance: number | null;
+  answer_unit: string | null;
   explanation: string | null;
   created_at: string;
 }
@@ -88,6 +99,9 @@ export interface GeneratedContent {
     correct_answer: number;
     correct_answers: number[];
     correct_answer_text: string;
+    numeric_answer?: number | null;
+    answer_tolerance?: number | null;
+    answer_unit?: string | null;
     explanation: string;
   }[];
   topic_summaries: {
@@ -154,14 +168,24 @@ export interface EngineeringProblem {
   solutionSteps: string[];
 }
 
+export interface NclexQuestion {
+  scenario: string;
+  question: string;
+  choices: string[];
+  correct_answer: number;
+  rationale: string;
+}
+
 export interface WorkbenchContent {
   id: string;
   document_id: string;
   group_name: string;
+  study_mode?: StudyMode;
   brief_html: string;
   inquiry_questions: InquiryQuestion[];
   faded_blanks: FadedBlank[];
   engineering_problems: EngineeringProblem[];
+  nclex_questions: NclexQuestion[];
   glossary: GlossaryEntry[];
   node_ids: string[];
   required_node_ids: string[];

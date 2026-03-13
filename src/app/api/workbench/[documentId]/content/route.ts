@@ -1,7 +1,243 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { groq } from "@/lib/groq";
-import type { ConceptNode } from "@/types";
+import {
+  compileNclexReferencePacket,
+  getNclexExplanationFormatInstructions,
+  getNclexQualityChecklist,
+  getNclexStemStyleInstructions,
+} from "@/lib/nclex-guidance";
+import { questionLeaksCorrectAnswer, shuffleSingleAnswerChoices } from "@/lib/nclex-utils";
+import type { ConceptNode, NclexQuestion, StudyMode } from "@/types";
+
+function compactGuidance(text: string, maxChars = 2200) {
+  return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
+}
+
+function looksLikeBinaryOppositeOptions(choices: string[]) {
+  const normalized = choices.map((choice) => choice.trim().toLowerCase());
+  const oppositePatterns = [
+    ["increase", "decrease"],
+    ["higher", "lower"],
+    ["more", "less"],
+    ["raise", "lower"],
+    ["up", "down"],
+  ];
+
+  return oppositePatterns.some(([a, b]) => {
+    const aMatches = normalized.filter((choice) => choice.includes(a)).length;
+    const bMatches = normalized.filter((choice) => choice.includes(b)).length;
+    return aMatches >= 2 && bMatches >= 2;
+  });
+}
+
+function hasClinicalContext(text: string) {
+  const normalized = text.toLowerCase();
+  return [
+    "client",
+    "patient",
+    "nurse",
+    "assessment",
+    "findings",
+    "reports",
+    "vital signs",
+    "admitted",
+    "postoperative",
+    "provider",
+    "history",
+    "symptom",
+    "priority",
+    "delegat",
+  ].some((marker) => normalized.includes(marker));
+}
+
+function isValidNclexQuestion(question: NclexQuestion) {
+  return (
+    typeof question.scenario === "string" &&
+    typeof question.question === "string" &&
+    Array.isArray(question.choices) &&
+    question.choices.length === 4 &&
+    typeof question.correct_answer === "number" &&
+    question.correct_answer >= 0 &&
+    question.correct_answer <= 3 &&
+    typeof question.rationale === "string"
+  );
+}
+
+function isStrongNclexQuestion(question: NclexQuestion) {
+  return (
+    isValidNclexQuestion(question) &&
+    hasClinicalContext(`${question.scenario} ${question.question}`) &&
+    !looksLikeBinaryOppositeOptions(question.choices) &&
+    !questionLeaksCorrectAnswer(question.question, question.choices[question.correct_answer] || "", question.scenario) &&
+    new Set(question.choices.map((choice) => choice.trim().toLowerCase())).size === 4
+  );
+}
+
+function randomizeNclexQuestion(question: NclexQuestion) {
+  return shuffleSingleAnswerChoices(question, "rationale");
+}
+
+async function generateSupplementalNclexQuestions(
+  groupName: string,
+  conceptList: string,
+  docContext: string,
+  missingCount: number,
+  existingQuestions: NclexQuestion[],
+  nursingPacketText: string
+): Promise<NclexQuestion[]> {
+  const avoidList = existingQuestions.map((q, index) => `${index + 1}. ${q.question}`).join("\n");
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `You create only NCLEX-style questions and return valid JSON.
+
+Return exactly this format:
+{
+  "questions": [
+    {
+      "scenario": "Brief patient scenario or care setting context.",
+      "question": "An NCLEX-style question asking for the best nursing action.",
+      "choices": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": 1,
+      "rationale": "Best answer: ... Wrong options: A) ... B) ... C) ... D) ... Rule: ..."
+    }
+  ]
+}
+
+Rules:
+- Generate exactly ${missingCount} new NCLEX-style questions
+- Each must be single-best-answer with exactly 4 choices
+- Use nursing-specific terminology and plausible distractors
+- Include concrete client context without revealing the answer
+- Test clinical judgment, prioritization, teaching, follow-up, or delegation rather than simple recall
+- Keep most items focused on the best nursing action, but include some alternate stem styles such as need for further teaching, requires immediate follow-up, or evaluation of outcomes
+- Do not use increase/decrease style opposite pairs as the main choice structure
+- Do not restate the diagnosis, teaching point, or intervention from the correct option inside the stem
+- Spread correct answers across A, B, C, and D instead of clustering them
+- Stem-style guidance:
+${getNclexStemStyleInstructions()}
+- ${getNclexExplanationFormatInstructions().replace("explanation", "rationale")}
+- Follow this curated guidance:
+${compactGuidance(nursingPacketText)}
+- Do not repeat or closely paraphrase any existing questions
+- Respond only with JSON`,
+        },
+        {
+          role: "user",
+          content: `Concept group: "${groupName}"
+
+Concepts:
+${conceptList}
+
+${docContext ? `Document context:\n${docContext.slice(0, 5000)}\n\n` : ""}Existing questions to avoid:
+${avoidList || "None"}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 3000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return [];
+    }
+
+    const parsed = JSON.parse(content) as { questions?: NclexQuestion[] };
+    return (Array.isArray(parsed.questions) ? parsed.questions : [])
+      .filter(isStrongNclexQuestion)
+      .map(randomizeNclexQuestion);
+  } catch (error) {
+    console.error("Workbench supplemental NCLEX generation failed:", error);
+    return [];
+  }
+}
+
+async function refineNclexQuestions(
+  questions: NclexQuestion[],
+  groupName: string,
+  conceptList: string,
+  docContext: string,
+  nursingPacketText: string
+): Promise<NclexQuestion[]> {
+  if (questions.length === 0) {
+    return [];
+  }
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `You are an NCLEX-RN item editor. Rewrite these NCLEX questions to improve quality while staying aligned to the concept group and uploaded document.
+
+Return JSON:
+{
+  "questions": [
+    {
+      "scenario": "Brief patient scenario or care setting context.",
+      "question": "An NCLEX-style question asking for the best nursing action.",
+      "choices": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": 1,
+      "rationale": "Best answer: ... Wrong options: A) ... B) ... C) ... D) ... Rule: ..."
+    }
+  ]
+}
+
+Quality checklist:
+${getNclexQualityChecklist()}
+
+Guidance:
+${compactGuidance(nursingPacketText, 1600)}
+
+Rules:
+- Keep the same number of questions
+- Use nursing-specific wording and less obvious distractors
+- Keep one clearly best answer
+- Add clinical context if the question is too abstract
+- Replace opposite-pair options with four distinct plausible nursing actions
+- Make the rationale explain both the best answer and the wrong options
+- Keep most items action-focused, but vary some stems with further teaching, follow-up, delegation, or evaluation wording
+- Remove any stem that gives away the answer by repeating the diagnosis or key intervention from the correct option
+- Stem-style guidance:
+${getNclexStemStyleInstructions()}
+ - Return only revised questions in JSON.`,
+        },
+        {
+          role: "user",
+          content: `Concept group: "${groupName}"
+
+Concepts:
+${conceptList}
+
+${docContext ? `Document context:\n${docContext.slice(0, 4000)}\n\n` : ""}Improve these NCLEX questions:
+${JSON.stringify(questions)}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.4,
+      max_tokens: 4500,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return questions;
+    }
+
+    const parsed = JSON.parse(content) as { questions?: NclexQuestion[] };
+    const refined = Array.isArray(parsed.questions) ? parsed.questions : questions;
+    return refined.filter(isStrongNclexQuestion).map(randomizeNclexQuestion);
+  } catch (error) {
+    console.error("Workbench NCLEX refinement failed, falling back:", error);
+    return questions;
+  }
+}
 
 // GET — fetch or generate workbench content for a group
 export async function GET(
@@ -16,7 +252,14 @@ export async function GET(
       return NextResponse.json({ error: "group query param required" }, { status: 400 });
     }
 
-    // Check if content already exists for this group
+    const { data: doc } = await supabase
+      .from("documents")
+      .select("content, filename, study_mode")
+      .eq("id", documentId)
+      .maybeSingle();
+
+    const studyMode = (doc?.study_mode ?? "engineers") as StudyMode;
+
     const { data: existing } = await supabase
       .from("workbench_content")
       .select("*")
@@ -25,10 +268,9 @@ export async function GET(
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json(existing);
+      return NextResponse.json({ ...existing, study_mode: studyMode });
     }
 
-    // Fetch the concept graph to get all nodes in this group
     const { data: graph } = await supabase
       .from("concept_graphs")
       .select("nodes")
@@ -46,21 +288,13 @@ export async function GET(
       return NextResponse.json({ error: "No nodes found in this group" }, { status: 404 });
     }
 
-    // Fetch document content for richer context
-    const { data: doc } = await supabase
-      .from("documents")
-      .select("content, filename")
-      .eq("id", documentId)
-      .maybeSingle();
-
     const docContext = doc?.content ? doc.content.slice(0, 8000) : "";
-
-    // Build concept list for the prompt
     const conceptList = groupNodes
       .map((n) => `- "${n.label}": ${n.definition}`)
       .join("\n");
+    const nursingPacket = studyMode === "nursing" ? compileNclexReferencePacket(docContext) : null;
+    const nursingPacketText = nursingPacket?.packetText ?? "";
 
-    // Generate via Groq — group-level content with required/optional classification
     const response = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
@@ -100,40 +334,44 @@ You MUST respond with valid JSON in exactly this format:
       "solutionSteps": ["Step 1: ...", "Step 2: ...", "Step 3: ..."]
     }
   ],
+  "nclex_questions": [
+    {
+      "scenario": "Brief patient scenario or care setting context.",
+      "question": "An NCLEX-style question asking for the best nursing action.",
+      "choices": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": 1,
+      "rationale": "Best answer: ... Wrong options: A) ... B) ... C) ... D) ... Rule: ..."
+    }
+  ],
   "requiredConcepts": ["concept label 1", "concept label 2"],
   "optionalConcepts": ["concept label 3"]
 }
 
 Rules:
-- BRIEF FORMAT: Structure the brief as 3-5 SHORT sections, each with an <h3> title and 1-2 concise paragraphs wrapped in <p> tags. Example:
-  <h3>What is [Concept]?</h3><p>Short, clear explanation...</p>
-  <h3>How [Concept A] connects to [Concept B]</h3><p>Short explanation...</p>
-  <h3>Why this matters</h3><p>Real-world significance...</p>
-- LANGUAGE STYLE: Write at a clear accessible level — like explaining to a smart friend, not a textbook. Use short sentences (under 20 words when possible). Avoid jargon unless defining it. Wrap key vocabulary in <strong> tags on first use.
-- Each section should be self-contained and digestible in ~15 seconds of reading.
-- ANSWERS IN THE BRIEF: CRITICAL — every inquiry question's answer MUST be clearly stated or directly derivable from the brief. If a student reads the brief carefully, they should be able to answer every inquiry question. Do NOT ask questions requiring outside knowledge.
-- GLOSSARY: Include 4-8 key vocabulary terms from the brief. Each entry needs a plain-language definition and a contextual example sentence. These should correspond to the <strong> terms in the brief.
-- INQUIRY QUESTIONS:
-  - Generate 4 questions that test deep understanding across the group.
-  - briefSection: must exactly match one of the <h3> titles in the brief where the answer is found.
-  - HINTS — exactly 2 per question:
-    - Hint 1: A directional nudge — tell the student which section or concept to re-read. Example: "Look at how [Concept A] relates to [Concept B] in the brief."
-    - Hint 2: An aggressive giveaway — restate the answer with one key word blanked out, or provide all but the final connecting idea. Example: "The answer involves _____ causing reduced blood flow, which leads to..."
-  - keyTerms: 3-5 essential words/phrases for client-side validation. Choose specific, unambiguous terms.
-- Generate 6 faded blanks spanning all concepts (single-word or short-phrase answers, 1-3 words).
-- engineering_problems: Generate 2-3 quantitative problems if concepts are quantitative. Otherwise set to [].
-  - Each problem must have a clear numerical answer
-  - tolerance is the acceptable error margin (e.g., 5 means ±5)
-  - solutionSteps should walk through the complete calculation
-  - Use realistic values and proper units
-- Classify concepts as REQUIRED (core, must-know) or OPTIONAL (supplementary, nice-to-know).
-  - At least half should be REQUIRED
-  - requiredConcepts and optionalConcepts must exactly match the provided concept labels
-- Respond ONLY with the JSON object, no additional text.`,
+- BRIEF FORMAT: Structure the brief as 3-5 short sections with <h3> headings and concise paragraphs.
+- LANGUAGE STYLE: Write clearly and accessibly.
+- Every inquiry question must be answerable from the brief.
+- Generate 4 inquiry questions and 6 faded blanks.
+- engineering_problems: If study mode is "engineers", generate 2-3 quantitative problems when concepts are quantitative. Otherwise set to [].
+- nclex_questions: If study mode is "nursing", generate at least 5 NCLEX-style questions. Otherwise set to [].
+  - Use client-centered nursing language
+  - Keep one best answer with plausible distractors
+  - Include concrete clinical context in the scenario or stem
+  - Keep most questions focused on the best nursing action or priority action, but include some alternate stems such as need for further teaching, immediate follow-up, delegation, reassessment, or expected outcome
+  - Answer choices must be four distinct plausible nursing actions or interpretations, not binary increase/decrease style opposites
+  - Do not reveal the answer by repeating the diagnosis, intervention, or teaching point from the correct option in the scenario or stem
+  - Spread correct answers across A, B, C, and D instead of clustering them
+  - Make rationales explain why the key is right and why the distractors are wrong
+  - Stem-style guidance:
+${getNclexStemStyleInstructions()}
+  - Follow this guidance:
+${nursingPacketText}
+- Classify concepts as REQUIRED or OPTIONAL.
+- Respond ONLY with the JSON object.`,
         },
         {
           role: "user",
-          content: `Generate group study content for the "${groupName}" concept group.
+          content: `Generate group study content for the "${groupName}" concept group in ${studyMode} mode.
 
 Concepts in this group:
 ${conceptList}
@@ -151,30 +389,79 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
       throw new Error("No content from Groq API");
     }
 
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content) as {
+      brief?: string;
+      glossary?: { term: string; definition: string; context: string }[];
+      inquiry_questions?: {
+        question: string;
+        idealAnswer: string;
+        hints: string[];
+        keyTerms?: string[];
+        briefSection?: string;
+      }[];
+      faded_blanks?: { textBefore: string; answer: string; textAfter: string }[];
+      engineering_problems?: {
+        problem: string;
+        givenData: string[];
+        answer: number;
+        unit: string;
+        tolerance: number;
+        solutionSteps: string[];
+      }[];
+      nclex_questions?: NclexQuestion[];
+      requiredConcepts?: string[];
+    };
 
-    // Ensure keyTerms and briefSection exist on all inquiry questions (fallback for older LLM output)
-    const inquiryQuestions = (parsed.inquiry_questions || []).map(
-      (q: { question: string; idealAnswer: string; hints: string[]; keyTerms?: string[]; briefSection?: string }) => ({
-        ...q,
-        keyTerms: q.keyTerms ?? [],
-        briefSection: q.briefSection ?? "",
-      })
-    );
+    const inquiryQuestions = (parsed.inquiry_questions || []).map((q) => ({
+      ...q,
+      keyTerms: q.keyTerms ?? [],
+      briefSection: q.briefSection ?? "",
+    }));
 
-    // Map required/optional labels back to node IDs
     const labelToId = new Map(groupNodes.map((n) => [n.label.toLowerCase(), n.id]));
-    const requiredLabels: string[] = parsed.requiredConcepts ?? [];
-    const requiredNodeIds = requiredLabels
-      .map((l: string) => labelToId.get(l.toLowerCase()))
+    const requiredNodeIds = (parsed.requiredConcepts ?? [])
+      .map((l) => labelToId.get(l.toLowerCase()))
       .filter((id: string | undefined): id is string => !!id);
 
-    // If LLM didn't classify properly, default: all nodes are required
-    const finalRequired = requiredNodeIds.length > 0
-      ? requiredNodeIds
-      : groupNodes.map((n) => n.id);
+    const finalRequired = requiredNodeIds.length > 0 ? requiredNodeIds : groupNodes.map((n) => n.id);
 
-    // Store in DB
+    let nclexQuestions = (parsed.nclex_questions || [])
+      .filter(isStrongNclexQuestion)
+      .map(randomizeNclexQuestion);
+
+    if (studyMode === "nursing" && nclexQuestions.length < 5) {
+      const supplemental = await generateSupplementalNclexQuestions(
+        groupName,
+        conceptList,
+        docContext,
+        5 - nclexQuestions.length,
+        nclexQuestions,
+        nursingPacketText
+      );
+      nclexQuestions = [...nclexQuestions, ...supplemental];
+    }
+
+    if (studyMode === "nursing") {
+      nclexQuestions = await refineNclexQuestions(
+        nclexQuestions.slice(0, Math.max(5, nclexQuestions.length)),
+        groupName,
+        conceptList,
+        docContext,
+        nursingPacketText
+      );
+      if (nclexQuestions.length < 5) {
+        const topOff = await generateSupplementalNclexQuestions(
+          groupName,
+          conceptList,
+          docContext,
+          5 - nclexQuestions.length,
+          nclexQuestions,
+          nursingPacketText
+        );
+        nclexQuestions = [...nclexQuestions, ...topOff];
+      }
+    }
+
     const { data: saved, error: saveError } = await supabase
       .from("workbench_content")
       .insert({
@@ -184,6 +471,7 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
         inquiry_questions: inquiryQuestions,
         faded_blanks: parsed.faded_blanks || [],
         engineering_problems: parsed.engineering_problems || [],
+        nclex_questions: studyMode === "nursing" ? nclexQuestions : [],
         glossary: parsed.glossary || [],
         node_ids: groupNodes.map((n) => n.id),
         required_node_ids: finalRequired,
@@ -191,9 +479,28 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
       .select()
       .single();
 
-    if (saveError) throw saveError;
+    if (saveError) {
+      if (saveError.code === "23505") {
+        const { data: racedContent, error: refetchError } = await supabase
+          .from("workbench_content")
+          .select("*")
+          .eq("document_id", documentId)
+          .eq("group_name", groupName)
+          .maybeSingle();
 
-    return NextResponse.json(saved);
+        if (refetchError) {
+          throw refetchError;
+        }
+
+        if (racedContent) {
+          return NextResponse.json({ ...racedContent, study_mode: studyMode });
+        }
+      }
+
+      throw saveError;
+    }
+
+    return NextResponse.json({ ...saved, study_mode: studyMode });
   } catch (error) {
     console.error("Workbench content error:", error);
     return NextResponse.json(
@@ -219,7 +526,6 @@ export async function POST(
       );
     }
 
-    // Upsert mastery for the group
     const { error } = await supabase
       .from("workbench_mastery")
       .upsert(
@@ -232,7 +538,9 @@ export async function POST(
         { onConflict: "document_id,group_name" }
       );
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
     return NextResponse.json({ success: true, stage });
   } catch (error) {

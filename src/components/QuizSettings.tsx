@@ -12,6 +12,8 @@ const TYPE_LABELS: Record<QuestionType, string> = {
   mcq: "Multiple Choice",
   multiple_select: "Multiple Select",
   short_answer: "Short Answer",
+  nclex: "NCLEX Style",
+  engineering: "Engineering Workout",
 };
 
 export default function QuizSettingsPanel({

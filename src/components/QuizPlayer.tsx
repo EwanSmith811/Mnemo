@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { QuizQuestion, QuestionType, QuizAnswer } from "@/types";
 import ScoreDisplay from "./ScoreDisplay";
+import NclexRationaleCard from "./NclexRationaleCard";
 
 interface QuizPlayerProps {
   questions: QuizQuestion[];
@@ -65,6 +66,7 @@ export default function QuizPlayer({
   const isCurrentCorrect = (): boolean => {
     switch (questionType) {
       case "mcq":
+      case "nclex":
         return selectedAnswer === question.correct_answer;
       case "multiple_select": {
         const correctSet = new Set(question.correct_answers || []);
@@ -78,6 +80,15 @@ export default function QuizPlayer({
           typedAnswer.trim().toLowerCase() ===
           (question.correct_answer_text || "").trim().toLowerCase()
         );
+      case "engineering": {
+        const typed = parseFloat(typedAnswer.replace(/[^\d.\-eE]/g, ""));
+        return (
+          !Number.isNaN(typed) &&
+          question.numeric_answer !== null &&
+          question.answer_tolerance !== null &&
+          Math.abs(typed - question.numeric_answer) <= question.answer_tolerance
+        );
+      }
       default:
         return false;
     }
@@ -180,6 +191,8 @@ export default function QuizPlayer({
           {questionType === "mcq" && "Multiple Choice"}
           {questionType === "multiple_select" && "Select All That Apply"}
           {questionType === "short_answer" && "Short Answer"}
+          {questionType === "nclex" && "NCLEX Style"}
+          {questionType === "engineering" && "Engineering Workout"}
         </span>
       </div>
 
@@ -221,6 +234,41 @@ export default function QuizPlayer({
             );
           })}
         </div>
+      )}
+
+      {questionType === "nclex" && (
+        <>
+          <div className="space-y-3">
+            {question.choices.map((choice, i) => {
+              let style = "glass glass-hover";
+              if (showResult) {
+                if (i === question.correct_answer) {
+                  style = "border-emerald-500/40 bg-emerald-500/10 glow-green";
+                } else if (i === selectedAnswer) {
+                  style = "border-red-500/40 bg-red-500/10";
+                } else {
+                  style = "glass opacity-40";
+                }
+              } else if (i === selectedAnswer) {
+                style = "border-emerald-500/40 bg-emerald-500/10";
+              }
+
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleMCQSelect(i)}
+                  disabled={showResult}
+                  className={`flex w-full items-center gap-3 rounded-xl p-4 text-left transition-all ${style}`}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
+                    {choiceLabels[i]}
+                  </span>
+                  <span className="text-zinc-200">{choice}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {/* Multiple select choices */}
@@ -310,6 +358,46 @@ export default function QuizPlayer({
         </>
       )}
 
+      {questionType === "engineering" && (
+        <>
+          <div className="mb-4 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300/80">Solve</p>
+            <p className="mt-1 text-sm text-zinc-300">
+              Enter the numeric result{question.answer_unit ? ` in ${question.answer_unit}` : ""}.
+            </p>
+          </div>
+          <div className="mb-4 flex gap-2">
+            <input
+              type="text"
+              value={typedAnswer}
+              onChange={(e) => setTypedAnswer(e.target.value)}
+              disabled={showResult}
+              placeholder="Enter numerical value..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && typedAnswer.trim() && !showResult) {
+                  handleSubmitAnswer();
+                }
+              }}
+              className="flex-1 rounded-xl glass px-4 py-3 text-base text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-amber-500/40 disabled:opacity-60"
+            />
+            {question.answer_unit && (
+              <span className="flex items-center rounded-xl glass px-3 text-sm font-mono text-zinc-400">
+                {question.answer_unit}
+              </span>
+            )}
+          </div>
+          {!showResult && (
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={!typedAnswer.trim()}
+              className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(245,158,11,0.3)] disabled:opacity-50"
+            >
+              Submit Answer
+            </button>
+          )}
+        </>
+      )}
+
       {/* Result feedback */}
       {showResult && (
         <div className="mt-6 animate-fade-in">
@@ -340,13 +428,32 @@ export default function QuizPlayer({
                   {question.correct_answer_text}
                 </>
               )}
+              {questionType === "nclex" && (
+                <>
+                  Incorrect. The best answer is{" "}
+                  {choiceLabels[question.correct_answer]}:{" "}
+                  {question.choices[question.correct_answer]}
+                </>
+              )}
+              {questionType === "engineering" && (
+                <>
+                  Incorrect. The correct answer is:{" "}
+                  {question.numeric_answer} {question.answer_unit}
+                </>
+              )}
             </div>
           )}
 
           {question.explanation && (
-            <p className="mt-3 text-sm text-zinc-500">
-              {question.explanation}
-            </p>
+            questionType === "nclex" ? (
+              <div className="mt-4">
+                <NclexRationaleCard text={question.explanation} variant="quiz" />
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-zinc-500">
+                {question.explanation}
+              </p>
+            )
           )}
 
           <button

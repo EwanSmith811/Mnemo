@@ -9,7 +9,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from("quiz_questions")
-    .select("id, document_id, question, question_type, choices, correct_answer, correct_answers, correct_answer_text, explanation")
+    .select("id, document_id, question, question_type, choices, correct_answer, correct_answers, correct_answer_text, numeric_answer, answer_tolerance, answer_unit, explanation")
     .eq("document_id", documentId);
 
   if (error) {

@@ -4,14 +4,20 @@ import { extractText } from "@/lib/document-parser";
 import { prepareTextForLLM } from "@/lib/text-chunker";
 import { generateFlashcardsAndQuiz } from "@/lib/generate-content";
 import { generateConceptGraph } from "@/lib/generate-graph";
+import type { StudyMode } from "@/types";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const studyModeValue = formData.get("studyMode");
+    const studyMode =
+      studyModeValue === "nursing" || studyModeValue === "engineers"
+        ? (studyModeValue as StudyMode)
+        : null;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!file || !studyMode) {
+      return NextResponse.json({ error: "File and study mode are required" }, { status: 400 });
     }
 
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -29,6 +35,7 @@ export async function POST(request: NextRequest) {
       .insert({
         filename: file.name,
         file_type: fileType,
+        study_mode: studyMode,
         file_size_bytes: file.size,
         status: "processing",
       })
@@ -54,7 +61,7 @@ export async function POST(request: NextRequest) {
       const { text: preparedText } = prepareTextForLLM(rawText);
 
       // Call Groq API to generate flashcards + quiz questions
-      const content = await generateFlashcardsAndQuiz(preparedText, file.name);
+      const content = await generateFlashcardsAndQuiz(preparedText, file.name, studyMode);
 
       // Store flashcards
       const flashcardRows = content.flashcards.map((fc) => ({
@@ -79,6 +86,9 @@ export async function POST(request: NextRequest) {
         correct_answers:
           q.correct_answers.length > 0 ? q.correct_answers : null,
         correct_answer_text: q.correct_answer_text || null,
+        numeric_answer: q.numeric_answer ?? null,
+        answer_tolerance: q.answer_tolerance ?? null,
+        answer_unit: q.answer_unit ?? null,
         explanation: q.explanation,
       }));
 
@@ -135,23 +145,21 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         document_id: doc.id,
+        study_mode: studyMode,
         flashcard_count: content.flashcards.length,
         quiz_question_count: content.quiz_questions.length,
         topic_summary_count: content.topic_summaries.length,
         concept_node_count: graphData.nodes.length,
       });
     } catch (processingError) {
-      await supabase
+      const { error: cleanupError } = await supabase
         .from("documents")
-        .update({
-          status: "failed",
-          error_message:
-            processingError instanceof Error
-              ? processingError.message
-              : "Unknown error",
-          updated_at: new Date().toISOString(),
-        })
+        .delete()
         .eq("id", doc.id);
+
+      if (cleanupError) {
+        console.error("Upload cleanup error:", cleanupError);
+      }
 
       throw processingError;
     }

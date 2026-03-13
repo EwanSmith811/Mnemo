@@ -1,15 +1,52 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+let browserClient: SupabaseClient | null = null;
+let adminClient: SupabaseClient | null = null;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
 
-// Server-side admin client — bypasses Row Level Security.
-// Uses SUPABASE_SERVICE_ROLE_KEY if available, else falls back to anon key.
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-export const supabaseAdmin = serviceRoleKey
-  ? createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
-  : supabase;
+  if (!value) {
+    throw new Error(`Missing ${name} environment variable.`);
+  }
+
+  return value;
+}
+
+function getSupabaseClient(): SupabaseClient {
+  if (!browserClient) {
+    browserClient = createClient(
+      getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    );
+  }
+
+  return browserClient;
+}
+
+function getSupabaseAdminClient(): SupabaseClient {
+  if (!adminClient) {
+    const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    adminClient = serviceRoleKey
+      ? createClient(url, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+      : createClient(url, getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
+  }
+
+  return adminClient;
+}
+
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    return getSupabaseClient()[prop as keyof SupabaseClient];
+  },
+});
+
+export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    return getSupabaseAdminClient()[prop as keyof SupabaseClient];
+  },
+});

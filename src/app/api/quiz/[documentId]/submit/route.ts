@@ -22,7 +22,7 @@ export async function POST(
   const { data: questions, error } = await supabase
     .from("quiz_questions")
     .select(
-      "id, question_type, correct_answer, correct_answers, correct_answer_text"
+      "id, question_type, correct_answer, correct_answers, correct_answer_text, numeric_answer, answer_tolerance"
     )
     .eq("document_id", documentId);
 
@@ -61,6 +61,18 @@ export async function POST(
           (a.typed_answer || "").trim().toLowerCase() ===
           (q.correct_answer_text || "").trim().toLowerCase();
         break;
+      case "nclex":
+        isCorrect = q.correct_answer === a.selected_answer;
+        break;
+      case "engineering": {
+        const typed = parseFloat((a.typed_answer || "").replace(/[^\d.\-eE]/g, ""));
+        isCorrect =
+          !Number.isNaN(typed) &&
+          typeof q.numeric_answer === "number" &&
+          typeof q.answer_tolerance === "number" &&
+          Math.abs(typed - q.numeric_answer) <= q.answer_tolerance;
+        break;
+      }
     }
 
     return {
