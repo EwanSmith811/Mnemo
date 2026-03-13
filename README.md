@@ -37,7 +37,39 @@ npm -v
 
 You should see version numbers for both commands.
 
-### 2. Download the Project
+### 2. Install Git
+
+If you want the easiest way to download updates later, install Git too.
+
+On Windows:
+
+1. Go to [https://git-scm.com/download/win](https://git-scm.com/download/win)
+2. Download the installer
+3. Run it
+4. Keep the default options unless you already know you want something different
+
+On macOS:
+
+1. Go to [https://git-scm.com/download/mac](https://git-scm.com/download/mac)
+2. Install Git using the installer there, or install Xcode Command Line Tools if prompted by your Mac
+
+On Linux:
+
+Use your package manager. Examples:
+
+```bash
+sudo apt install git
+# or
+sudo dnf install git
+```
+
+After installation, open a new terminal and check that it worked:
+
+```bash
+git --version
+```
+
+### 3. Download the Project
 
 If you do not use Git:
 
@@ -52,7 +84,7 @@ git clone <repo-url>
 cd Mnemo
 ```
 
-### 3. Open the Project Folder in a Terminal
+### 4. Open the Project Folder in a Terminal
 
 On Windows:
 
@@ -68,7 +100,7 @@ On macOS:
 3. Drag the project folder into the Terminal window
 4. Press Enter
 
-### 4. Install the App Dependencies
+### 5. Install the App Dependencies
 
 Run:
 
@@ -78,7 +110,7 @@ npm install
 
 This may take a minute or two.
 
-### 5. Create Your Environment File
+### 6. Create Your Environment File
 
 Create a file named `.env` in the project root and add your keys:
 
@@ -100,7 +132,7 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` is recommended for server-side admin operations
 - ElevenLabs keys are only needed if you want text-to-speech or speech-to-text features
 
-### 6. Run the Database Setup
+### 7. Run the Database Setup
 
 Open your Supabase project and run the SQL migrations in order:
 
@@ -115,7 +147,7 @@ Open your Supabase project and run the SQL migrations in order:
 
 If you are not using the Supabase CLI, you can copy each file into the Supabase SQL Editor and run them one by one.
 
-### 7. Start the App
+### 8. Start the App
 
 Run:
 
@@ -200,7 +232,17 @@ If it still fails, reinstall Node.js from [https://nodejs.org](https://nodejs.or
 
 ### `git` is not recognized
 
-You can still use the app by downloading the repository as a `.zip` instead of cloning it.
+Git is not installed yet, or your terminal was open before installation finished.
+
+Try:
+
+1. close the terminal
+2. reopen it
+3. run `git --version`
+
+If it still fails, install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads).
+
+You can still use the app by downloading the repository as a `.zip` instead of cloning it if you prefer.
 
 ### The app starts but uploads fail
 
