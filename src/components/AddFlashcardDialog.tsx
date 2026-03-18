@@ -6,11 +6,13 @@ import type { Flashcard } from "@/types";
 
 interface AddFlashcardDialogProps {
   documentId: string;
+  isDisabled?: boolean;
   onAdd: (card: Flashcard) => void;
 }
 
 export default function AddFlashcardDialog({
   documentId,
+  isDisabled = false,
   onAdd,
 }: AddFlashcardDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -23,6 +25,7 @@ export default function AddFlashcardDialog({
   useEffect(() => { setMounted(true); }, []);
 
   const openDialog = () => {
+    if (isDisabled) return;
     setTerm("");
     setDefinition("");
     setError("");
@@ -163,7 +166,8 @@ export default function AddFlashcardDialog({
     <>
       <button
         onClick={openDialog}
-        className="inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover hover-glow-blue"
+        disabled={isDisabled}
+        className="inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover hover-glow-blue disabled:cursor-not-allowed disabled:opacity-50"
       >
         <svg className="h-4 w-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

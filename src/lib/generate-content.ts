@@ -12,11 +12,97 @@ import {
 } from "./nclex-utils";
 import type { GeneratedContent, StudyMode } from "@/types";
 
-type GeneratedQuizQuestion = GeneratedContent["quiz_questions"][number];
+export const MAX_GENERATED_FLASHCARDS = 100;
+export const MAX_GENERATED_TOPIC_SUMMARIES = 30;
+export const MAX_GENERATION_BATCH_SIZE = 10;
+
+export type GeneratedFlashcard = GeneratedContent["flashcards"][number];
+export type GeneratedQuizQuestion = GeneratedContent["quiz_questions"][number];
+export type GeneratedTopicSummary = GeneratedContent["topic_summaries"][number];
 type BaseQuestionType = "mcq" | "multiple_select" | "short_answer";
 
 function compactGuidance(text: string, maxChars = 2500) {
   return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
+}
+
+function clampBatchCount(requestedCount: number) {
+  return Math.max(1, Math.min(MAX_GENERATION_BATCH_SIZE, Math.floor(requestedCount)));
+}
+
+function estimateInitialFlashcardTarget(documentText: string) {
+  const wordCount = documentText.split(/\s+/).filter(Boolean).length;
+  return Math.max(18, Math.min(32, Math.ceil(wordCount / 180)));
+}
+
+function estimateInitialTopicTarget(documentText: string) {
+  const wordCount = documentText.split(/\s+/).filter(Boolean).length;
+  const sectionBreaks = documentText.split(/\n{2,}/).filter((section) => section.trim().length > 60).length;
+  const heuristic = Math.max(Math.ceil(wordCount / 500), Math.ceil(sectionBreaks / 7));
+  return Math.max(6, Math.min(12, heuristic));
+}
+
+function normalizeGeneratedFlashcard(raw: GeneratedFlashcard): GeneratedFlashcard | null {
+  const term = raw.term?.trim?.() ?? "";
+  const definition = raw.definition?.trim?.() ?? "";
+
+  if (!term || !definition) {
+    return null;
+  }
+
+  return { term, definition };
+}
+
+function dedupeFlashcards(flashcards: GeneratedFlashcard[]) {
+  const seen = new Set<string>();
+
+  return flashcards.filter((flashcard) => {
+    const key = flashcard.term.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeGeneratedTopicSummary(
+  raw: GeneratedTopicSummary,
+  displayOrder: number
+): GeneratedTopicSummary | null {
+  const topicName = raw.topic_name?.trim?.() ?? "";
+  const summary = raw.summary
+    ?.trim?.()
+    .replace(/\n{3,}/g, "\n\n") ?? "";
+
+  if (!topicName || !summary) {
+    return null;
+  }
+
+  return {
+    topic_name: topicName,
+    summary,
+    display_order: displayOrder,
+  };
+}
+
+function dedupeTopicSummaries(topicSummaries: GeneratedTopicSummary[]) {
+  const seen = new Set<string>();
+
+  return topicSummaries.filter((summary) => {
+    const key = summary.topic_name.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function resequenceTopicSummaries(topicSummaries: GeneratedTopicSummary[]) {
+  return topicSummaries.map((summary, index) => ({
+    ...summary,
+    display_order: index + 1,
+  }));
 }
 
 function looksLikeBinaryOppositeOptions(choices: string[]) {
@@ -128,8 +214,9 @@ function normalizeGeneratedQuestion(raw: GeneratedQuizQuestion): GeneratedQuizQu
     if (q.choices.length < 4) return null;
     const uniqueCorrect = [...new Set(q.correct_answers)].filter((index) => index >= 0 && index < q.choices.length);
     if (uniqueCorrect.length < 2) return null;
+    if (q.choices.length === 4 && uniqueCorrect.length >= 4) return null;
     if (q.choices.length > 4 || uniqueCorrect.some((index) => index >= 4)) {
-      const selected = uniqueCorrect.slice(0, 4);
+      const selected = uniqueCorrect.slice(0, Math.min(3, uniqueCorrect.length));
       const distractors = q.choices
         .map((choice, index) => ({ choice, index }))
         .filter(({ index }) => !selected.includes(index))
@@ -141,8 +228,9 @@ function normalizeGeneratedQuestion(raw: GeneratedQuizQuestion): GeneratedQuizQu
       q.correct_answers = remappedCorrect;
     } else {
       q.choices = q.choices.slice(0, 4);
-      q.correct_answers = uniqueCorrect;
+      q.correct_answers = uniqueCorrect.slice(0, 3);
     }
+    if (q.correct_answers.length >= q.choices.length) return null;
     return randomizeQuestionChoices(q);
   }
 
@@ -175,7 +263,7 @@ async function generateReplacementQuestions(
   const typeInstructions = requestedTypes
     .map(([type, count]) => {
       if (type === "mcq") return `- Exactly ${count} mcq questions with 4 choices and one correct answer`;
-      if (type === "multiple_select") return `- Exactly ${count} multiple_select questions with exactly 4 choices and at least 2 correct answers`;
+      if (type === "multiple_select") return `- Exactly ${count} multiple_select questions with exactly 4 choices and 2 or 3 correct answers`;
       return `- Exactly ${count} short_answer questions with no choices and a short correct_answer_text`;
     })
     .join("\n");
@@ -210,6 +298,7 @@ Rules:
 ${typeInstructions}
 - Do not repeat existing questions
 - Use exactly 4 choices for mcq and multiple_select
+- For multiple_select, always include at least 1 distractor and never mark all 4 choices as correct
 - Respond only with JSON`,
         },
         {
@@ -230,6 +319,143 @@ ${typeInstructions}
       .filter((q): q is GeneratedQuizQuestion => !!q);
   } catch (error) {
     console.error("Replacement question generation failed:", error);
+    return [];
+  }
+}
+
+export function sanitizeGeneratedQuizQuestions(rawQuestions: GeneratedQuizQuestion[]) {
+  return rawQuestions
+    .map(normalizeGeneratedQuestion)
+    .filter((q): q is GeneratedQuizQuestion => !!q)
+    .filter(isQuestionValid)
+    .map(randomizeQuestionChoices);
+}
+
+export async function generateAdditionalFlashcards(
+  documentText: string,
+  filename: string,
+  requestedCount: number,
+  existingFlashcards: GeneratedFlashcard[]
+): Promise<GeneratedFlashcard[]> {
+  const targetCount = clampBatchCount(requestedCount);
+  const existingTerms = existingFlashcards.map((card, index) => `${index + 1}. ${card.term}`).join("\n");
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `You create high-quality study flashcards in valid JSON.
+
+Return:
+{
+  "flashcards": [
+    {
+      "term": "Key concept",
+      "definition": "A precise, easy-to-study explanation"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly ${targetCount} NEW flashcards
+- Focus on the most useful terms, processes, formulas, or distinctions that are not already covered
+- Keep each term concise and specific
+- Make each definition 1-3 sentences, accurate, and memorable
+- Include one helpful detail when possible, such as why it matters, a quick contrast, a caveat, or a tiny example
+- Do not repeat existing terms or produce near-duplicates
+- Respond only with JSON`,
+        },
+        {
+          role: "user",
+          content: `Document: "${filename}"\n\nContent:\n${documentText.slice(0, 11000)}\n\nExisting flashcards to avoid:\n${existingTerms || "None"}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 3500,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content) as { flashcards?: GeneratedFlashcard[] };
+    return dedupeFlashcards(
+      (Array.isArray(parsed.flashcards) ? parsed.flashcards : [])
+        .map(normalizeGeneratedFlashcard)
+        .filter((card): card is GeneratedFlashcard => !!card)
+    );
+  } catch (error) {
+    console.error("Additional flashcard generation failed:", error);
+    return [];
+  }
+}
+
+export async function generateAdditionalTopicSummaries(
+  documentText: string,
+  filename: string,
+  requestedCount: number,
+  existingTopicSummaries: GeneratedTopicSummary[]
+): Promise<GeneratedTopicSummary[]> {
+  const targetCount = clampBatchCount(requestedCount);
+  const existingTopics = existingTopicSummaries
+    .map((summary, index) => `${index + 1}. ${summary.topic_name}`)
+    .join("\n");
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `You create teaching-focused topic summaries in valid JSON.
+
+Return:
+{
+  "topic_summaries": [
+    {
+      "topic_name": "Distinct topic name",
+      "summary": "A plain-language summary in 2-4 short paragraphs.",
+      "display_order": 1
+    }
+  ]
+}
+
+Rules:
+- Generate exactly ${targetCount} NEW topic summaries
+- Break the material into distinct teachable topics or subtopics instead of collapsing the document into a few giant buckets
+- Prefer narrower, useful topics when the document is large, section-heavy, or slide-based
+- Each summary should be 2-4 short paragraphs in clear language
+- Explain the idea, why it matters, and how to recognize or apply it
+- Use analogies, concrete examples, contrasts, or step-by-step explanation when helpful
+- Do not repeat existing topic names or near-duplicates
+- display_order can be any placeholder number because it will be reassigned
+- Respond only with JSON`,
+        },
+        {
+          role: "user",
+          content: `Document: "${filename}"\n\nContent:\n${documentText.slice(0, 12000)}\n\nExisting topics to avoid:\n${existingTopics || "None"}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.75,
+      max_tokens: 5000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content) as { topic_summaries?: GeneratedTopicSummary[] };
+    return resequenceTopicSummaries(
+      dedupeTopicSummaries(
+        (Array.isArray(parsed.topic_summaries) ? parsed.topic_summaries : [])
+          .map((summary, index) => normalizeGeneratedTopicSummary(summary, index + 1))
+          .filter((summary): summary is GeneratedTopicSummary => !!summary)
+      )
+    );
+  } catch (error) {
+    console.error("Additional topic summary generation failed:", error);
     return [];
   }
 }
@@ -578,6 +804,8 @@ export async function generateFlashcardsAndQuiz(
 ): Promise<GeneratedContent> {
   const nursingPacket = studyMode === "nursing" ? compileNclexReferencePacket(documentText) : null;
   const nursingPacketText = nursingPacket?.packetText ?? "";
+  const flashcardTarget = estimateInitialFlashcardTarget(documentText);
+  const topicSummaryTarget = estimateInitialTopicTarget(documentText);
 
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -643,13 +871,15 @@ You MUST respond with valid JSON in exactly this format:
 }
 
 Rules for flashcards:
-- Generate 10-20 flashcards covering the most important concepts
+- Generate exactly ${flashcardTarget} flashcards covering the most important concepts, processes, formulas, and distinctions
+- Terms should be concise, specific, and non-redundant
 - Make definitions concise but complete (1-3 sentences)
+- Each definition should include one memorable detail when useful, such as why it matters, a quick example, a contrast, or a common pitfall
 
 Rules for quiz questions:
 - Generate at least 55 quiz questions total with a MIX of types:
   - Exactly 20 "mcq" (multiple choice, single correct, exactly 4 choices, correct_answer is 0-3 index)
-  - Exactly 15 "multiple_select" (multiple correct answers, exactly 4 choices, correct_answers is array of correct indices, at least 2 correct)
+  - Exactly 15 "multiple_select" (multiple correct answers, exactly 4 choices, correct_answers is array of correct indices, with 2 or 3 correct answers and never all 4)
   - Exactly 15 "short_answer" (type the answer, choices array is empty, correct_answer_text is the expected answer as a short phrase of 1-5 words)
 ${buildSpecializedRules(studyMode, nursingPacketText)}
 - Quiz questions should test understanding, not just memorization
@@ -662,10 +892,11 @@ ${buildSpecializedRules(studyMode, nursingPacketText)}
 - For non-engineering questions, set numeric_answer to null, answer_tolerance to null, and answer_unit to ""
 
 Rules for topic summaries:
-- Identify 3-6 main topics from the document
+- Identify exactly ${topicSummaryTarget} distinct topics or subtopics from the document
+- For large slide decks or section-heavy documents, break broad chapters into smaller teachable topics instead of collapsing everything into only a few themes
 - Write each summary in simple, accessible language
 - Use analogies, real-world examples, and step-by-step explanations
-- Each summary should be 2-4 paragraphs
+- Each summary should be 2-4 short paragraphs
 - display_order should start at 1 and increment sequentially
 
 Respond ONLY with the JSON object, no additional text.`,
@@ -694,6 +925,47 @@ Respond ONLY with the JSON object, no additional text.`,
   ) {
     throw new Error("Invalid response structure from Groq API");
   }
+
+  let flashcards = dedupeFlashcards(
+    parsed.flashcards
+      .map(normalizeGeneratedFlashcard)
+      .filter((card): card is GeneratedFlashcard => !!card)
+  );
+
+  while (flashcards.length < flashcardTarget) {
+    const supplementalFlashcards = await generateAdditionalFlashcards(
+      documentText,
+      filename,
+      Math.min(MAX_GENERATION_BATCH_SIZE, flashcardTarget - flashcards.length),
+      flashcards
+    );
+    if (supplementalFlashcards.length === 0) break;
+    flashcards = dedupeFlashcards([...flashcards, ...supplementalFlashcards]);
+  }
+
+  let topicSummaries = resequenceTopicSummaries(
+    dedupeTopicSummaries(
+      parsed.topic_summaries
+        .map((summary, index) => normalizeGeneratedTopicSummary(summary, index + 1))
+        .filter((summary): summary is GeneratedTopicSummary => !!summary)
+    )
+  );
+
+  while (topicSummaries.length < topicSummaryTarget) {
+    const supplementalSummaries = await generateAdditionalTopicSummaries(
+      documentText,
+      filename,
+      Math.min(MAX_GENERATION_BATCH_SIZE, topicSummaryTarget - topicSummaries.length),
+      topicSummaries
+    );
+    if (supplementalSummaries.length === 0) break;
+    topicSummaries = resequenceTopicSummaries(
+      dedupeTopicSummaries([...topicSummaries, ...supplementalSummaries])
+    );
+  }
+
+  parsed.flashcards = flashcards;
+  parsed.topic_summaries = topicSummaries;
 
   let normalizedQuestions = parsed.quiz_questions
     .map(normalizeGeneratedQuestion)
@@ -753,6 +1025,8 @@ Respond ONLY with the JSON object, no additional text.`,
 
   return {
     ...completed,
+    flashcards,
     quiz_questions: finalQuestions,
+    topic_summaries: topicSummaries,
   };
 }

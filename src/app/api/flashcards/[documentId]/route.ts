@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { MAX_GENERATED_FLASHCARDS } from "@/lib/generate-content";
 
 export async function GET(
   request: NextRequest,
@@ -35,6 +36,22 @@ export async function POST(
     );
   }
 
+  const { count, error: countError } = await supabase
+    .from("flashcards")
+    .select("*", { count: "exact", head: true })
+    .eq("document_id", documentId);
+
+  if (countError) {
+    return NextResponse.json({ error: countError.message }, { status: 500 });
+  }
+
+  if ((count ?? 0) >= MAX_GENERATED_FLASHCARDS) {
+    return NextResponse.json(
+      { error: `Flashcard limit reached (${MAX_GENERATED_FLASHCARDS} max)` },
+      { status: 400 }
+    );
+  }
+
   const { data: card, error: insertError } = await supabase
     .from("flashcards")
     .insert({
@@ -49,19 +66,13 @@ export async function POST(
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
-  // Increment the document's flashcard_count
-  const { data: doc } = await supabase
+  await supabase
     .from("documents")
-    .select("flashcard_count")
-    .eq("id", documentId)
-    .single();
-
-  if (doc) {
-    await supabase
-      .from("documents")
-      .update({ flashcard_count: (doc.flashcard_count || 0) + 1 })
-      .eq("id", documentId);
-  }
+    .update({
+      flashcard_count: (count ?? 0) + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", documentId);
 
   return NextResponse.json(card, { status: 201 });
 }

@@ -16,5 +16,18 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  const cleaned = (data ?? []).filter((question) => {
+    if (question.question_type !== "multiple_select") {
+      return true;
+    }
+
+    const choices = Array.isArray(question.choices) ? question.choices : [];
+    const correctAnswers = Array.isArray(question.correct_answers)
+      ? question.correct_answers.filter((index) => Number.isInteger(index) && index >= 0 && index < choices.length)
+      : [];
+
+    return choices.length === 4 && correctAnswers.length >= 2 && correctAnswers.length < choices.length;
+  });
+
+  return NextResponse.json(cleaned);
 }

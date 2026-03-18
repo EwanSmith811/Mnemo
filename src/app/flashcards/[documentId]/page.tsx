@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import FlashcardViewer from "@/components/FlashcardViewer";
 import AddFlashcardDialog from "@/components/AddFlashcardDialog";
+import GenerateCountDialog from "@/components/GenerateCountDialog";
 import type { Flashcard, ReviewRating } from "@/types";
+
+function sortCards(cards: Flashcard[]) {
+  return [...cards].sort(
+    (a, b) => new Date(a.next_review_date).getTime() - new Date(b.next_review_date).getTime()
+  );
+}
 
 function useCountdown(targetDate: Date | null) {
   const [now, setNow] = useState(() => new Date());
@@ -43,31 +50,36 @@ export default function FlashcardReviewPage() {
   const [allCards, setAllCards] = useState<Flashcard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [forceReview, setForceReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch(`/api/flashcards/${documentId}`);
         const data: Flashcard[] = await res.json();
-        setAllCards(data);
+        setAllCards(sortCards(Array.isArray(data) ? data : []));
       } catch (err) {
         console.error("Failed to load flashcards:", err);
+        setError("Unable to load flashcards right now.");
       } finally {
         setIsLoading(false);
       }
     }
+
     load();
   }, [documentId]);
 
+  const remainingSlots = Math.max(0, 100 - allCards.length);
+  const maxRequest = Math.min(10, remainingSlots);
+
   const now = new Date();
-  const dueCards = allCards.filter((c) => new Date(c.next_review_date) <= now);
-  const notDueCards = allCards.filter((c) => new Date(c.next_review_date) > now);
+  const dueCards = allCards.filter((card) => new Date(card.next_review_date) <= now);
+  const notDueCards = allCards.filter((card) => new Date(card.next_review_date) > now);
   const nextDueDate = notDueCards.length > 0
-    ? new Date(Math.min(...notDueCards.map((c) => new Date(c.next_review_date).getTime())))
+    ? new Date(Math.min(...notDueCards.map((card) => new Date(card.next_review_date).getTime())))
     : null;
 
   const countdown = useCountdown(nextDueDate);
-
   const cardsToReview = forceReview ? allCards : dueCards;
 
   const handleReview = async (cardId: string, rating: ReviewRating) => {
@@ -79,7 +91,32 @@ export default function FlashcardReviewPage() {
   };
 
   const handleAddCard = (card: Flashcard) => {
-    setAllCards((prev) => [...prev, card]);
+    setError(null);
+    setAllCards((prev) => sortCards([...prev, card]));
+  };
+
+  const handleGenerateMore = async (count: number) => {
+    if (maxRequest === 0) return;
+
+    setError(null);
+
+    const res = await fetch(`/api/flashcards/${documentId}/more`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to generate flashcards");
+    }
+
+    const newCards: Flashcard[] = Array.isArray(data.flashcards) ? data.flashcards : [];
+    if (newCards.length === 0) {
+      throw new Error("The model could not find more distinct flashcards to add from this document.");
+    }
+
+    setAllCards((prev) => sortCards([...prev, ...newCards]));
   };
 
   if (isLoading) {
@@ -98,7 +135,7 @@ export default function FlashcardReviewPage() {
 
   return (
     <div className="min-h-screen px-6 py-12">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-4xl">
         <Link
           href={`/documents/${documentId}`}
           className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
@@ -109,18 +146,56 @@ export default function FlashcardReviewPage() {
           Back to document
         </Link>
 
-        <div className="mb-8 flex items-center justify-between animate-fade-in-up">
-          <div>
+        <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="animate-fade-in-up">
             <h1 className="text-2xl font-bold gradient-text-blue">Flashcard Review</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              {dueCards.length} due now &middot; {allCards.length} total
+              {dueCards.length} due now, {allCards.length} total saved
             </p>
-            <div className="mt-2 glow-line-blue w-16" />
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
+              Review what is due, add your own cards, or ask the model for 1-10 more cards at a time.
+            </p>
+            <div className="mt-3 glow-line-blue w-16" />
           </div>
-          <AddFlashcardDialog documentId={documentId} onAdd={handleAddCard} />
+
+          <div className="w-full max-w-xl rounded-2xl glass-blue p-5 animate-fade-in-up delay-100" style={{ opacity: 0 }}>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">Flashcard pool</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Up to 100 flashcards per document. Generate 1-10 at a time.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <GenerateCountDialog
+                    accent="blue"
+                    buttonLabel="Generate More"
+                    confirmLabel="Generate Flashcards"
+                    countLabel="How many flashcards should we add?"
+                    description="Ask the model for a fresh batch of additional study cards from this document."
+                    heading="Generate More Flashcards"
+                    isDisabled={remainingSlots === 0}
+                    maxCount={maxRequest}
+                    onGenerate={handleGenerateMore}
+                  />
+                  <AddFlashcardDialog
+                    documentId={documentId}
+                    isDisabled={remainingSlots === 0}
+                    onAdd={handleAddCard}
+                  />
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-500">
+                {remainingSlots > 0 ? `${remainingSlots} slot${remainingSlots !== 1 ? "s" : ""} remaining` : "Flashcard limit reached"}
+              </p>
+
+              {error && <p className="text-sm text-red-400">{error}</p>}
+            </div>
+          </div>
         </div>
 
-        {/* Optimal return timer */}
         {dueCards.length === 0 && nextDueDate && countdown && countdown.total > 0 && !forceReview && (
           <div className="mb-8 rounded-2xl glass-blue p-6 animate-fade-in-up glow-blue">
             <div className="flex items-start gap-4">
@@ -137,16 +212,14 @@ export default function FlashcardReviewPage() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                  Spaced repetition is most effective when you review cards just as you&apos;re about to forget them.
-                  Reviewing too early weakens the memory-strengthening effect. The SM-2 algorithm schedules
-                  each card at the optimal moment based on your past performance.
+                  Spaced repetition works best right before a memory fades. Reviewing too early feels productive,
+                  but it gives you less recall training than coming back at the edge of forgetting.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Force review option */}
         {dueCards.length === 0 && allCards.length > 0 && !forceReview && (
           <div className="mb-8 text-center animate-fade-in-up delay-100" style={{ opacity: 0 }}>
             <button
@@ -158,11 +231,10 @@ export default function FlashcardReviewPage() {
           </div>
         )}
 
-        {/* Force review banner when active */}
         {forceReview && (
           <div className="mb-6 flex items-center justify-between rounded-xl bg-purple-500/10 px-4 py-3 animate-fade-in">
             <span className="text-sm text-purple-300">
-              Reviewing all cards (including those not yet due)
+              Reviewing all cards, including cards that are not due yet
             </span>
             <button
               onClick={() => setForceReview(false)}
@@ -173,14 +245,13 @@ export default function FlashcardReviewPage() {
           </div>
         )}
 
-        {/* Inline force review link when there are due cards but also non-due cards */}
         {dueCards.length > 0 && notDueCards.length > 0 && !forceReview && (
           <div className="mb-6 text-center">
             <button
               onClick={() => setForceReview(true)}
               className="text-xs text-zinc-600 transition-colors hover:text-zinc-400"
             >
-              Or review all {allCards.length} cards including {notDueCards.length} not yet due
+              Or review all {allCards.length} cards, including {notDueCards.length} not yet due
             </button>
           </div>
         )}

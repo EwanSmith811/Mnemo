@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { StudyMode } from "@/types";
 
@@ -12,14 +12,14 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string; stage?: string } | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -45,7 +45,11 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const prepareFile = (file: File) => {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext !== "pdf" && ext !== "pptx") {
-      setError("Only PDF and PPTX files are supported.");
+      setError({
+        title: "Only PDF and PPTX files are supported.",
+        detail: `The file "${file.name}" is not a supported upload type.`,
+        stage: "validation",
+      });
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -93,12 +97,20 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           onUploadComplete();
         }, 400);
       } else {
-        let errMsg = "Upload failed";
+        let nextError = {
+          title: "Upload failed.",
+          detail: "The server did not return a detailed reason.",
+          stage: "processing",
+        };
         try {
           const data = JSON.parse(xhr.responseText);
-          errMsg = data.error || errMsg;
+          nextError = {
+            title: data.error || nextError.title,
+            detail: data.detail,
+            stage: data.stage,
+          };
         } catch { /* ignore parse error */ }
-        setError(errMsg);
+        setError(nextError);
         setUploadPhase("idle");
         setUploadProgress(0);
       }
@@ -106,7 +118,11 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     });
 
     xhr.addEventListener("error", () => {
-      setError("Upload failed");
+      setError({
+        title: "Upload failed before the server could respond.",
+        detail: "Check your connection and try again.",
+        stage: "network",
+      });
       setUploadPhase("idle");
       setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -250,8 +266,16 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       </div>
 
       {error && (
-        <div className="mt-3 rounded-xl glass px-4 py-3 text-sm text-red-400 border-red-500/20">
-          {error}
+        <div className="mt-3 rounded-xl glass border border-red-500/20 px-4 py-3">
+          <p className="text-sm font-medium text-red-400">{error.title}</p>
+          {error.detail && (
+            <p className="mt-1 text-sm leading-relaxed text-red-300/90">{error.detail}</p>
+          )}
+          {error.stage && (
+            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
+              Stage: {error.stage.replace(/_/g, " ")}
+            </p>
+          )}
         </div>
       )}
     </div>
