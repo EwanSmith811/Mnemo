@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import dynamic from "next/dynamic";
+import dynamic from 'next/dynamic';
 
-const GraphClient = dynamic(() => import("@/components/GraphClient"), {
+const GraphClient = dynamic(() => import('@/components/GraphClient'), {
   ssr: false,
   loading: () => (
     <div className="mx-auto max-w-4xl px-4 py-12">

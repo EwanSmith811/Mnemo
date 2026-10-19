@@ -1,16 +1,18 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import FlashcardViewer from "@/components/FlashcardViewer";
-import AddFlashcardDialog from "@/components/AddFlashcardDialog";
-import GenerateCountDialog from "@/components/GenerateCountDialog";
-import type { Flashcard, ReviewRating } from "@/types";
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import FlashcardViewer from '@/components/FlashcardViewer';
+import AddFlashcardDialog from '@/components/AddFlashcardDialog';
+import GenerateCountDialog from '@/components/GenerateCountDialog';
+import type { Flashcard, ReviewRating } from '@/types';
 
 function sortCards(cards: Flashcard[]) {
   return [...cards].sort(
-    (a, b) => new Date(a.next_review_date).getTime() - new Date(b.next_review_date).getTime()
+    (a, b) =>
+      new Date(a.next_review_date).getTime() -
+      new Date(b.next_review_date).getTime(),
   );
 }
 
@@ -36,7 +38,12 @@ function useCountdown(targetDate: Date | null) {
   return { days, hours, minutes, seconds, total: diff };
 }
 
-function formatCountdown(c: { days: number; hours: number; minutes: number; seconds: number }) {
+function formatCountdown(c: {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+}) {
   if (c.days > 0) return `${c.days}d ${c.hours}h ${c.minutes}m`;
   if (c.hours > 0) return `${c.hours}h ${c.minutes}m`;
   if (c.minutes > 0) return `${c.minutes}m ${c.seconds}s`;
@@ -57,10 +64,11 @@ export default function FlashcardReviewPage() {
       try {
         const res = await fetch(`/api/flashcards/${documentId}`);
         const data: Flashcard[] = await res.json();
+        if (!res.ok) throw new Error('Unable to load flashcards.');
         setAllCards(sortCards(Array.isArray(data) ? data : []));
       } catch (err) {
-        console.error("Failed to load flashcards:", err);
-        setError("Unable to load flashcards right now.");
+        console.error('Failed to load flashcards:', err);
+        setError('Unable to load flashcards right now.');
       } finally {
         setIsLoading(false);
       }
@@ -73,21 +81,33 @@ export default function FlashcardReviewPage() {
   const maxRequest = Math.min(10, remainingSlots);
 
   const now = new Date();
-  const dueCards = allCards.filter((card) => new Date(card.next_review_date) <= now);
-  const notDueCards = allCards.filter((card) => new Date(card.next_review_date) > now);
-  const nextDueDate = notDueCards.length > 0
-    ? new Date(Math.min(...notDueCards.map((card) => new Date(card.next_review_date).getTime())))
-    : null;
+  const dueCards = allCards.filter(
+    (card) => new Date(card.next_review_date) <= now,
+  );
+  const notDueCards = allCards.filter(
+    (card) => new Date(card.next_review_date) > now,
+  );
+  const nextDueDate =
+    notDueCards.length > 0
+      ? new Date(
+          Math.min(
+            ...notDueCards.map((card) =>
+              new Date(card.next_review_date).getTime(),
+            ),
+          ),
+        )
+      : null;
 
   const countdown = useCountdown(nextDueDate);
   const cardsToReview = forceReview ? allCards : dueCards;
 
   const handleReview = async (cardId: string, rating: ReviewRating) => {
-    await fetch(`/api/flashcards-review/${cardId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch(`/api/flashcards-review/${cardId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rating }),
     });
+    if (!res.ok) throw new Error('Could not save this review. Try again.');
   };
 
   const handleAddCard = (card: Flashcard) => {
@@ -101,19 +121,23 @@ export default function FlashcardReviewPage() {
     setError(null);
 
     const res = await fetch(`/api/flashcards/${documentId}/more`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count }),
     });
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data.error || "Failed to generate flashcards");
+      throw new Error(data.error || 'Failed to generate flashcards');
     }
 
-    const newCards: Flashcard[] = Array.isArray(data.flashcards) ? data.flashcards : [];
+    const newCards: Flashcard[] = Array.isArray(data.flashcards)
+      ? data.flashcards
+      : [];
     if (newCards.length === 0) {
-      throw new Error("The model could not find more distinct flashcards to add from this document.");
+      throw new Error(
+        'The model could not find more distinct flashcards to add from this document.',
+      );
     }
 
     setAllCards((prev) => sortCards([...prev, ...newCards]));
@@ -140,29 +164,44 @@ export default function FlashcardReviewPage() {
           href={`/documents/${documentId}`}
           className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
           Back to document
         </Link>
 
         <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="animate-fade-in-up">
-            <h1 className="text-2xl font-bold gradient-text-blue">Flashcard Review</h1>
+            <h1 className="text-2xl font-bold gradient-text-blue">
+              Flashcard Review
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
               {dueCards.length} due now, {allCards.length} total saved
             </p>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
-              Review what is due, add your own cards, or ask the model for 1-10 more cards at a time.
+              Review what is due, add your own cards, or ask the model for 1-10
+              more cards at a time.
             </p>
             <div className="mt-3 glow-line-blue w-16" />
           </div>
 
-          <div className="w-full max-w-xl rounded-2xl glass-blue p-5 animate-fade-in-up delay-100" style={{ opacity: 0 }}>
+          <div className="w-full max-w-xl rounded-2xl glass-blue p-5 animate-fade-in-up delay-100">
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-zinc-200">Flashcard pool</p>
+                  <p className="text-sm font-medium text-zinc-200">
+                    Flashcard pool
+                  </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Up to 100 flashcards per document. Generate 1-10 at a time.
                   </p>
@@ -188,7 +227,9 @@ export default function FlashcardReviewPage() {
               </div>
 
               <p className="text-xs text-zinc-500">
-                {remainingSlots > 0 ? `${remainingSlots} slot${remainingSlots !== 1 ? "s" : ""} remaining` : "Flashcard limit reached"}
+                {remainingSlots > 0
+                  ? `${remainingSlots} slot${remainingSlots !== 1 ? 's' : ''} remaining`
+                  : 'Flashcard limit reached'}
               </p>
 
               {error && <p className="text-sm text-red-400">{error}</p>}
@@ -196,32 +237,49 @@ export default function FlashcardReviewPage() {
           </div>
         </div>
 
-        {dueCards.length === 0 && nextDueDate && countdown && countdown.total > 0 && !forceReview && (
-          <div className="mb-8 rounded-2xl glass-blue p-6 animate-fade-in-up glow-blue">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10">
-                <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-zinc-300">Optimal return in</span>
-                  <span className="rounded-lg bg-blue-500/10 px-3 py-1 font-mono text-sm font-semibold text-blue-400">
-                    {formatCountdown(countdown)}
-                  </span>
+        {dueCards.length === 0 &&
+          nextDueDate &&
+          countdown &&
+          countdown.total > 0 &&
+          !forceReview && (
+            <div className="mb-8 rounded-2xl glass-blue p-6 animate-fade-in-up glow-blue">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10">
+                  <svg
+                    className="h-5 w-5 text-blue-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                  Spaced repetition works best right before a memory fades. Reviewing too early feels productive,
-                  but it gives you less recall training than coming back at the edge of forgetting.
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-zinc-300">
+                      Optimal return in
+                    </span>
+                    <span className="rounded-lg bg-blue-500/10 px-3 py-1 font-mono text-sm font-semibold text-blue-400">
+                      {formatCountdown(countdown)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                    Spaced repetition works best right before a memory fades.
+                    Reviewing too early feels productive, but it gives you less
+                    recall training than coming back at the edge of forgetting.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
         {dueCards.length === 0 && allCards.length > 0 && !forceReview && (
-          <div className="mb-8 text-center animate-fade-in-up delay-100" style={{ opacity: 0 }}>
+          <div className="mb-8 text-center animate-fade-in-up delay-100">
             <button
               onClick={() => setForceReview(true)}
               className="rounded-xl glass-purple px-5 py-3 text-sm text-zinc-400 transition-all glass-hover hover-glow-purple"
@@ -251,12 +309,13 @@ export default function FlashcardReviewPage() {
               onClick={() => setForceReview(true)}
               className="text-xs text-zinc-600 transition-colors hover:text-zinc-400"
             >
-              Or review all {allCards.length} cards, including {notDueCards.length} not yet due
+              Or review all {allCards.length} cards, including{' '}
+              {notDueCards.length} not yet due
             </button>
           </div>
         )}
 
-        <div className="animate-fade-in-up delay-100" style={{ opacity: 0 }}>
+        <div className="animate-fade-in-up delay-100">
           <FlashcardViewer cards={cardsToReview} onReview={handleReview} />
         </div>
       </div>

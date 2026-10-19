@@ -1,45 +1,45 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import AudioBubble from "@/components/AudioBubble";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import AudioBubble from '@/components/AudioBubble';
 
 // ── Voice options ────────────────────────────────────────────────
 const VOICES = [
-  { id: "hudson_williams", label: "Hudson Williams" },
+  { id: 'alloy', label: 'Alloy (AI voice)' },
 
-  { id: "male", label: "Male" },
-  { id: "woman", label: "Woman" },
+  { id: 'male', label: 'Onyx (AI voice)' },
+  { id: 'woman', label: 'Coral (AI voice)' },
 ];
 
 const RECORDER_MIME_CANDIDATES = [
-  "audio/webm;codecs=opus",
-  "audio/webm",
-  "audio/mp4",
-  "audio/mpeg",
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
 ] as const;
 
 const getSupportedRecorderMimeType = () => {
-  if (typeof MediaRecorder === "undefined") return null;
+  if (typeof MediaRecorder === 'undefined') return null;
   return (
     RECORDER_MIME_CANDIDATES.find((mimeType) =>
-      MediaRecorder.isTypeSupported(mimeType)
+      MediaRecorder.isTypeSupported(mimeType),
     ) ?? null
   );
 };
 
 const getAudioFilenameForMimeType = (mimeType: string) => {
-  if (mimeType.includes("mp4")) return "recording.mp4";
-  if (mimeType.includes("mpeg")) return "recording.mp3";
-  if (mimeType.includes("ogg")) return "recording.ogg";
-  return "recording.webm";
+  if (mimeType.includes('mp4')) return 'recording.mp4';
+  if (mimeType.includes('mpeg')) return 'recording.mp3';
+  if (mimeType.includes('ogg')) return 'recording.ogg';
+  return 'recording.webm';
 };
 
-type Mode = "user_explains" | "ai_quizzes";
+type Mode = 'user_explains' | 'ai_quizzes';
 
 interface Message {
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
 }
 
@@ -51,7 +51,7 @@ export default function VerbalQuizPage() {
   const [mode, setMode] = useState<Mode | null>(null);
   const [voiceId, setVoiceId] = useState(VOICES[0].id);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentText, setCurrentText] = useState(""); // streaming AI text
+  const [currentText, setCurrentText] = useState(''); // streaming AI text
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false); // STT in progress
@@ -65,31 +65,15 @@ export default function VerbalQuizPage() {
   const audioQueueRef = useRef<string[]>([]);
   const isPlayingQueueRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const streamMediaSourceRef = useRef<MediaSource | null>(null);
   const ttsSentenceQueueRef = useRef<string[]>([]);
   const isProcessingTTSRef = useRef(false);
   const voiceIdRef = useRef(VOICES[0].id);
-  const recorderMimeTypeRef = useRef("audio/webm");
+  const recorderMimeTypeRef = useRef('audio/webm');
 
   // ── Scroll to bottom on new messages ───────────────────────────
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentText]);
-
-  // ── Create persistent audio element ────────────────────────────
-  useEffect(() => {
-    const audio = new Audio();
-    audio.addEventListener("ended", () => {
-      setIsSpeaking(false);
-      playNextInQueue();
-    });
-    audioElementRef.current = audio;
-    return () => {
-      audio.pause();
-      audio.removeAttribute("src");
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ── Audio queue management ─────────────────────────────────────
   const playNextInQueue = useCallback(() => {
@@ -107,6 +91,20 @@ export default function VerbalQuizPage() {
     }
   }, []);
 
+  // ── Create persistent audio element ────────────────────────────
+  useEffect(() => {
+    const audio = new Audio();
+    audio.addEventListener('ended', () => {
+      setIsSpeaking(false);
+      playNextInQueue();
+    });
+    audioElementRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeAttribute('src');
+    };
+  }, [playNextInQueue]);
+
   const enqueueAudio = useCallback(
     (url: string) => {
       audioQueueRef.current.push(url);
@@ -115,7 +113,7 @@ export default function VerbalQuizPage() {
         playNextInQueue();
       }
     },
-    [playNextInQueue]
+    [playNextInQueue],
   );
 
   // Keep voiceIdRef in sync
@@ -131,9 +129,9 @@ export default function VerbalQuizPage() {
       const text = ttsSentenceQueueRef.current.shift()!;
       if (!text.trim()) continue;
       try {
-        const res = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, voiceId: voiceIdRef.current }),
         });
         if (!res.ok) continue;
@@ -153,20 +151,20 @@ export default function VerbalQuizPage() {
       ttsSentenceQueueRef.current.push(text);
       processTTSQueue();
     },
-    [processTTSQueue]
+    [processTTSQueue],
   );
 
   // ── Send message to LLM (streaming) ───────────────────────────
   const sendToLLM = useCallback(
     async (allMessages: Message[]) => {
       setIsStreaming(true);
-      setCurrentText("");
+      setCurrentText('');
       setError(null);
 
       try {
         const res = await fetch(`/api/verbal/${documentId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: allMessages.map((m) => ({
               role: m.role,
@@ -177,27 +175,29 @@ export default function VerbalQuizPage() {
         });
 
         if (!res.ok) {
-          throw new Error("Failed to get AI response");
+          throw new Error('Failed to get AI response');
         }
 
         const reader = res.body?.getReader();
-        if (!reader) throw new Error("No stream");
+        if (!reader) throw new Error('No stream');
 
         const decoder = new TextDecoder();
-        let fullText = "";
-        let sentenceBuffer = "";
+        let fullText = '';
+        let sentenceBuffer = '';
+        let eventBuffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          eventBuffer += decoder.decode(value, { stream: true });
+          const lines = eventBuffer.split('\n');
+          eventBuffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith("data: ")) {
+            if (line.startsWith('data: ')) {
               const data = line.slice(6);
-              if (data === "[DONE]") continue;
+              if (data === '[DONE]') continue;
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.text) {
@@ -206,12 +206,9 @@ export default function VerbalQuizPage() {
                   setCurrentText(fullText);
 
                   // When we accumulate a sentence, send to TTS
-                  const sentenceEnd = sentenceBuffer.match(
-                    /[.!?]\s|[.!?]$/
-                  );
+                  const sentenceEnd = sentenceBuffer.match(/[.!?]\s|[.!?]$/);
                   if (sentenceEnd) {
-                    const idx =
-                      sentenceEnd.index! + sentenceEnd[0].length;
+                    const idx = sentenceEnd.index! + sentenceEnd[0].length;
                     const sentence = sentenceBuffer.slice(0, idx);
                     sentenceBuffer = sentenceBuffer.slice(idx);
                     speakText(sentence);
@@ -232,18 +229,18 @@ export default function VerbalQuizPage() {
         // Add assistant message to history
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: fullText },
+          { role: 'assistant', content: fullText },
         ]);
-        setCurrentText("");
+        setCurrentText('');
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to get AI response"
+          err instanceof Error ? err.message : 'Failed to get AI response',
         );
       } finally {
         setIsStreaming(false);
       }
     },
-    [documentId, mode, speakText]
+    [documentId, mode, speakText],
   );
 
   // ── Start recording ────────────────────────────────────────────
@@ -255,19 +252,19 @@ export default function VerbalQuizPage() {
       // Stop any playing audio
       if (audioElementRef.current) {
         audioElementRef.current.pause();
-        audioElementRef.current.removeAttribute("src");
+        audioElementRef.current.removeAttribute('src');
       }
       audioQueueRef.current = [];
       isPlayingQueueRef.current = false;
       setIsSpeaking(false);
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError("This browser does not support microphone recording.");
+        setError('This browser does not support microphone recording.');
         return;
       }
 
-      if (typeof MediaRecorder === "undefined") {
-        setError("This browser does not support audio recording.");
+      if (typeof MediaRecorder === 'undefined') {
+        setError('This browser does not support audio recording.');
         return;
       }
 
@@ -297,7 +294,7 @@ export default function VerbalQuizPage() {
       }
 
       recorderMimeTypeRef.current =
-        mediaRecorder.mimeType || preferredMimeType || "audio/webm";
+        mediaRecorder.mimeType || preferredMimeType || 'audio/webm';
 
       audioChunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => {
@@ -312,7 +309,7 @@ export default function VerbalQuizPage() {
         const recordedMimeType =
           audioChunksRef.current[0]?.type ||
           recorderMimeTypeRef.current ||
-          "audio/webm";
+          'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, {
           type: recordedMimeType,
         });
@@ -322,25 +319,25 @@ export default function VerbalQuizPage() {
         try {
           const formData = new FormData();
           formData.append(
-            "audio",
+            'audio',
             audioBlob,
-            getAudioFilenameForMimeType(recordedMimeType)
+            getAudioFilenameForMimeType(recordedMimeType),
           );
-          const sttRes = await fetch("/api/stt", {
-            method: "POST",
+          const sttRes = await fetch('/api/stt', {
+            method: 'POST',
             body: formData,
           });
           const sttData = await sttRes.json().catch(() => null);
 
           if (!sttRes.ok) {
             throw new Error(
-              sttData?.error || "Speech recognition failed. Please try again."
+              sttData?.error || 'Speech recognition failed. Please try again.',
             );
           }
 
           if (sttData?.text && sttData.text.trim()) {
             const userMsg: Message = {
-              role: "user",
+              role: 'user',
               content: sttData.text.trim(),
             };
             const updatedMessages = [...messages, userMsg];
@@ -354,7 +351,7 @@ export default function VerbalQuizPage() {
           setError(
             err instanceof Error
               ? err.message
-              : "Speech recognition failed. Please try again."
+              : 'Speech recognition failed. Please try again.',
           );
         } finally {
           setIsProcessing(false);
@@ -368,31 +365,33 @@ export default function VerbalQuizPage() {
       activeStream?.getTracks().forEach((t) => t.stop());
 
       if (err instanceof DOMException) {
-        if (err.name === "NotAllowedError" || err.name === "SecurityError") {
+        if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
           setError(
-            "Microphone access denied. Please allow microphone access and try again."
+            'Microphone access denied. Please allow microphone access and try again.',
           );
           return;
         }
-        if (err.name === "NotFoundError") {
-          setError("No microphone found. Please connect a microphone and try again.");
+        if (err.name === 'NotFoundError') {
+          setError(
+            'No microphone found. Please connect a microphone and try again.',
+          );
           return;
         }
-        if (err.name === "NotReadableError") {
+        if (err.name === 'NotReadableError') {
           setError(
-            "Microphone is busy or unavailable. Close other apps using it and try again."
+            'Microphone is busy or unavailable. Close other apps using it and try again.',
           );
           return;
         }
       }
 
-      setError("Unable to start audio recording. Please try again.");
+      setError('Unable to start audio recording. Please try again.');
     }
   }, [messages, sendToLLM]);
 
   // ── Stop recording ─────────────────────────────────────────────
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current?.state === "recording") {
+    if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
@@ -403,14 +402,14 @@ export default function VerbalQuizPage() {
     (selectedMode: Mode) => {
       setMode(selectedMode);
       setMessages([]);
-      setCurrentText("");
+      setCurrentText('');
       setError(null);
 
       // For AI quizzes mode, immediately get first question
-      if (selectedMode === "ai_quizzes") {
+      if (selectedMode === 'ai_quizzes') {
         // Use a minimal trigger message to initiate
         const initMessages: Message[] = [
-          { role: "user", content: "Start the quiz." },
+          { role: 'user', content: 'Start the quiz.' },
         ];
         setMessages(initMessages);
         // Need to defer to let mode state update
@@ -419,7 +418,7 @@ export default function VerbalQuizPage() {
         }, 0);
       }
     },
-    [sendToLLM]
+    [sendToLLM],
   );
 
   // ── Mode selection screen ──────────────────────────────────────
@@ -431,8 +430,18 @@ export default function VerbalQuizPage() {
             href={`/documents/${documentId}`}
             className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
             Back to document
           </Link>
@@ -448,7 +457,7 @@ export default function VerbalQuizPage() {
           </div>
 
           {/* Voice selector */}
-          <div className="mb-8 animate-fade-in-up delay-100" style={{ opacity: 0 }}>
+          <div className="mb-8 animate-fade-in-up delay-100">
             <label className="mb-3 block text-sm font-medium text-zinc-400">
               AI Voice
             </label>
@@ -459,8 +468,8 @@ export default function VerbalQuizPage() {
                   onClick={() => setVoiceId(v.id)}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
                     voiceId === v.id
-                      ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40"
-                      : "glass text-zinc-400 hover:text-zinc-200 glass-hover"
+                      ? 'bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40'
+                      : 'glass text-zinc-400 hover:text-zinc-200 glass-hover'
                   }`}
                 >
                   {v.label}
@@ -470,17 +479,27 @@ export default function VerbalQuizPage() {
           </div>
 
           {/* Mode cards */}
-          <div className="grid gap-5 sm:grid-cols-2 animate-fade-in-up delay-200" style={{ opacity: 0 }}>
+          <div className="grid gap-5 sm:grid-cols-2 animate-fade-in-up delay-200">
             {/* User Explains */}
             <button
-              onClick={() => startSession("user_explains")}
+              onClick={() => startSession('user_explains')}
               className="group relative overflow-hidden rounded-2xl glass p-6 text-left transition-all duration-300 glass-hover hover-glow-blue"
             >
               <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20 opacity-50 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
               <div className="relative">
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-400">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  <svg
+                    className="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                    />
                   </svg>
                 </div>
                 <h2 className="mb-1 text-lg font-semibold text-zinc-100">
@@ -495,14 +514,24 @@ export default function VerbalQuizPage() {
 
             {/* AI Quizzes */}
             <button
-              onClick={() => startSession("ai_quizzes")}
+              onClick={() => startSession('ai_quizzes')}
               className="group relative overflow-hidden rounded-2xl glass p-6 text-left transition-all duration-300 glass-hover hover-glow-purple"
             >
               <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 opacity-50 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
               <div className="relative">
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  <svg
+                    className="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                    />
                   </svg>
                 </div>
                 <h2 className="mb-1 text-lg font-semibold text-zinc-100">
@@ -534,7 +563,7 @@ export default function VerbalQuizPage() {
                 setMode(null);
                 if (audioElementRef.current) {
                   audioElementRef.current.pause();
-                  audioElementRef.current.removeAttribute("src");
+                  audioElementRef.current.removeAttribute('src');
                 }
                 audioQueueRef.current = [];
                 isPlayingQueueRef.current = false;
@@ -542,17 +571,27 @@ export default function VerbalQuizPage() {
               }}
               className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
               </svg>
             </button>
             <div>
               <h1 className="text-lg font-semibold text-zinc-100">
-                {mode === "user_explains" ? "You Explain" : "AI Quizzes You"}
+                {mode === 'user_explains' ? 'You Explain' : 'AI Quizzes You'}
               </h1>
               <p className="text-xs text-zinc-500">
-                {mode === "user_explains"
-                  ? "Explain any topic and get feedback"
+                {mode === 'user_explains'
+                  ? 'Explain any topic and get feedback'
                   : "Answer the AI's questions"}
               </p>
             </div>
@@ -567,8 +606,8 @@ export default function VerbalQuizPage() {
                 title={v.label}
                 className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
                   voiceId === v.id
-                    ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40"
-                    : "text-zinc-600 hover:text-zinc-400"
+                    ? 'bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40'
+                    : 'text-zinc-600 hover:text-zinc-400'
                 }`}
               >
                 {v.label}
@@ -584,20 +623,24 @@ export default function VerbalQuizPage() {
               <div
                 key={i}
                 className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
                 }`}
               >
                 <div
                   className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-blue-500/15 text-blue-100"
-                      : "bg-white/5 text-zinc-300"
+                    msg.role === 'user'
+                      ? 'bg-blue-500/15 text-blue-100'
+                      : 'bg-white/5 text-zinc-300'
                   }`}
                 >
                   {/* Hide the "Start the quiz." trigger message */}
-                  {msg.role === "user" && msg.content === "Start the quiz."
-                    ? <span className="italic text-zinc-500">Session started</span>
-                    : msg.content}
+                  {msg.role === 'user' && msg.content === 'Start the quiz.' ? (
+                    <span className="italic text-zinc-500">
+                      Session started
+                    </span>
+                  ) : (
+                    msg.content
+                  )}
                 </div>
               </div>
             ))}
@@ -634,7 +677,6 @@ export default function VerbalQuizPage() {
           )}
 
           <AudioBubble
-            audioElement={audioElementRef.current}
             isSpeaking={isSpeaking}
             isRecording={isRecording}
             size={160}
@@ -649,10 +691,10 @@ export default function VerbalQuizPage() {
             disabled={isBusy}
             className={`group relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-200 ${
               isRecording
-                ? "bg-red-500/30 ring-2 ring-red-500 scale-110"
+                ? 'bg-red-500/30 ring-2 ring-red-500 scale-110'
                 : isBusy
-                ? "bg-white/5 text-zinc-600 cursor-not-allowed"
-                : "bg-white/10 text-zinc-300 hover:bg-white/15 hover:scale-105 active:scale-95"
+                  ? 'bg-white/5 text-zinc-600 cursor-not-allowed'
+                  : 'bg-white/10 text-zinc-300 hover:bg-white/15 hover:scale-105 active:scale-95'
             }`}
           >
             {isRecording ? (
@@ -676,10 +718,10 @@ export default function VerbalQuizPage() {
 
           <p className="text-xs text-zinc-600">
             {isRecording
-              ? "Release to send"
+              ? 'Release to send'
               : isBusy
-              ? "Processing..."
-              : "Hold to speak"}
+                ? 'Processing...'
+                : 'Hold to speak'}
           </p>
         </div>
       </div>

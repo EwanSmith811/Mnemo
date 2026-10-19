@@ -1,62 +1,33 @@
-import { NextRequest, NextResponse } from "next/server";
-
-// Allow up to 25MB audio uploads and longer processing
-export const maxDuration = 30;
-
+import { NextRequest, NextResponse } from 'next/server';
+import { ai } from '@/lib/ai';
+export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const audioFile = formData.get("audio") as File | null;
-
-    if (!audioFile) {
+    const form = await request.formData();
+    const audio = form.get('audio');
+    if (!(audio instanceof File) || !audio.size)
       return NextResponse.json(
-        { error: "No audio file provided" },
-        { status: 400 }
+        { error: 'Choose an audio recording.' },
+        { status: 400 },
       );
-    }
-
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) {
+    if (audio.size > 25 * 1024 * 1024)
       return NextResponse.json(
-        { error: "Server missing ELEVENLABS_API_KEY" },
-        { status: 500 }
+        { error: 'Audio must be smaller than 25 MB.' },
+        { status: 413 },
       );
-    }
-
-    // Forward to ElevenLabs STT
-    const elevenLabsForm = new FormData();
-    const uploadFileName =
-      audioFile.name || (audioFile.type.includes("mp4") ? "recording.mp4" : "recording.webm");
-    elevenLabsForm.append("file", audioFile, uploadFileName);
-    elevenLabsForm.append("model_id", "scribe_v1");
-
-    const response = await fetch(
-      "https://api.elevenlabs.io/v1/speech-to-text",
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-        },
-        body: elevenLabsForm,
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("ElevenLabs STT error:", response.status, errorText);
-      return NextResponse.json(
-        { error: "Speech-to-text failed" },
-        { status: response.status }
-      );
-    }
-
-    const result = await response.json();
-    return NextResponse.json({ text: result.text || "" });
+    const result = await ai.audio.transcriptions.create({
+      file: audio,
+      model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
+    });
+    return NextResponse.json({ text: result.text });
   } catch (error) {
-    console.error("STT route error:", error);
+    console.error('Transcription failed:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "STT failed" },
-      { status: 500 }
+      {
+        error:
+          'Could not transcribe the recording. Check the server configuration and try again.',
+      },
+      { status: 502 },
     );
   }
 }

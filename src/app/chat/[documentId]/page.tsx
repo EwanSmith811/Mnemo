@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import type { Document } from "@/types";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import type { Document } from '@/types';
 
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
 }
 
@@ -23,7 +23,7 @@ export default function ChatPage() {
 
   const [doc, setDoc] = useState<Document | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDocLoading, setIsDocLoading] = useState(true);
 
@@ -39,9 +39,10 @@ export default function ChatPage() {
   useEffect(() => {
     async function loadDoc() {
       try {
-        const res = await fetch("/api/documents");
-        const docs: Document[] = await res.json();
-        setDoc(docs.find((d) => d.id === documentId) || null);
+        const res = await fetch(`/api/documents/${documentId}`);
+        if (res.ok) setDoc(await res.json());
+      } catch {
+        setDoc(null);
       } finally {
         setIsDocLoading(false);
       }
@@ -62,26 +63,39 @@ export default function ChatPage() {
   }, [documentId]);
 
   useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
+    const controller = new AbortController();
+    fetch(`/api/chat/${documentId}/conversations`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (res.ok) setConversations(await res.json());
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [documentId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   // Derive a title from the first user message
   function deriveTitle(msgs: ChatMessage[]): string {
-    const first = msgs.find((m) => m.role === "user");
-    if (!first) return "New conversation";
-    return first.content.length > 50 ? first.content.slice(0, 50) + "..." : first.content;
+    const first = msgs.find((m) => m.role === 'user');
+    if (!first) return 'New conversation';
+    return first.content.length > 50
+      ? first.content.slice(0, 50) + '...'
+      : first.content;
   }
 
   // Save or update the current conversation
-  async function saveConversation(msgs: ChatMessage[], convoId: string | null): Promise<string | null> {
+  async function saveConversation(
+    msgs: ChatMessage[],
+    convoId: string | null,
+  ): Promise<string | null> {
     try {
       const res = await fetch(`/api/chat/${documentId}/conversations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId: convoId,
           title: deriveTitle(msgs),
@@ -103,26 +117,29 @@ export default function ChatPage() {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    const userMessage: ChatMessage = { role: "user", content: trimmed };
+    const userMessage: ChatMessage = { role: 'user', content: trimmed };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
-    setInput("");
+    setInput('');
     setIsLoading(true);
 
     try {
       const res = await fetch(`/api/chat/${documentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: updatedMessages }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to get response");
+        throw new Error(data.error || 'Failed to get response');
       }
 
       const data = await res.json();
-      const finalMessages = [...updatedMessages, { role: "assistant" as const, content: data.reply }];
+      const finalMessages = [
+        ...updatedMessages,
+        { role: 'assistant' as const, content: data.reply },
+      ];
       setMessages(finalMessages);
 
       // Save conversation after successful exchange
@@ -133,7 +150,10 @@ export default function ChatPage() {
     } catch (err) {
       setMessages([
         ...updatedMessages,
-        { role: "assistant", content: `Error: ${err instanceof Error ? err.message : "Something went wrong. Please try again."}` },
+        {
+          role: 'assistant',
+          content: `Error: ${err instanceof Error ? err.message : 'Something went wrong. Please try again.'}`,
+        },
       ]);
     } finally {
       setIsLoading(false);
@@ -142,7 +162,7 @@ export default function ChatPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -161,10 +181,15 @@ export default function ChatPage() {
     setSidebarOpen(false);
   };
 
-  const handleDeleteConversation = async (convoId: string, e: React.MouseEvent) => {
+  const handleDeleteConversation = async (
+    convoId: string,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
     try {
-      await fetch(`/api/chat/${documentId}/conversations?id=${convoId}`, { method: "DELETE" });
+      await fetch(`/api/chat/${documentId}/conversations?id=${convoId}`, {
+        method: 'DELETE',
+      });
       if (activeConvoId === convoId) {
         handleNewChat();
       }
@@ -189,7 +214,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen" style={{ background: "#050510" }}>
+    <div className="flex h-screen" style={{ background: '#050510' }}>
       {/* Sidebar overlay on mobile */}
       {sidebarOpen && (
         <div
@@ -201,25 +226,40 @@ export default function ChatPage() {
       {/* Sidebar */}
       <div
         className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col lg:relative lg:z-auto transition-transform duration-200 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
         style={{
-          backgroundColor: "rgba(5, 5, 16, 0.98)",
-          borderRight: "1px solid rgba(255,255,255,0.05)",
+          backgroundColor: 'rgba(5, 5, 16, 0.98)',
+          borderRight: '1px solid rgba(255,255,255,0.05)',
         }}
       >
         {/* Sidebar header with back button */}
-        <div className="flex items-center gap-2 p-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <div
+          className="flex items-center gap-2 p-4"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+        >
           <Link
             href={`/documents/${documentId}`}
             className="flex items-center gap-1 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-teal-400"
             title="Back to document"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </Link>
-          <span className="text-sm font-semibold text-zinc-300 flex-1">Conversations</span>
+          <span className="text-sm font-semibold text-zinc-300 flex-1">
+            Conversations
+          </span>
           <button
             onClick={handleNewChat}
             className="rounded-lg glass-teal px-3 py-1.5 text-xs font-medium text-teal-400 transition-all glass-hover"
@@ -231,7 +271,9 @@ export default function ChatPage() {
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto p-2">
           {conversations.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-zinc-600">No conversations yet</p>
+            <p className="px-3 py-6 text-center text-xs text-zinc-600">
+              No conversations yet
+            </p>
           ) : (
             <div className="space-y-1">
               {conversations.map((convo) => (
@@ -240,19 +282,32 @@ export default function ChatPage() {
                   onClick={() => handleLoadConversation(convo)}
                   className={`group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-all ${
                     activeConvoId === convo.id
-                      ? "bg-teal-500/10 border border-teal-500/20"
-                      : "hover:bg-white/5"
+                      ? 'bg-teal-500/10 border border-teal-500/20'
+                      : 'hover:bg-white/5'
                   }`}
                 >
-                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  <svg
+                    className="mt-0.5 h-4 w-4 shrink-0 text-zinc-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
                   </svg>
                   <div className="min-w-0 flex-1">
-                    <p className={`truncate text-sm ${activeConvoId === convo.id ? "text-teal-300" : "text-zinc-400"}`}>
+                    <p
+                      className={`truncate text-sm ${activeConvoId === convo.id ? 'text-teal-300' : 'text-zinc-400'}`}
+                    >
                       {convo.title}
                     </p>
                     <p className="mt-0.5 text-xs text-zinc-600">
-                      {convo.messages.length} messages &middot; {formatTimeAgo(convo.updated_at)}
+                      {convo.messages.length} messages &middot;{' '}
+                      {formatTimeAgo(convo.updated_at)}
                     </p>
                   </div>
                   <button
@@ -260,8 +315,18 @@ export default function ChatPage() {
                     className="mt-0.5 shrink-0 rounded p-1 text-zinc-700 opacity-0 transition-all hover:bg-white/5 hover:text-red-400 group-hover:opacity-100"
                     title="Delete conversation"
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <svg
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </div>
@@ -271,7 +336,10 @@ export default function ChatPage() {
         </div>
 
         {/* Sidebar footer */}
-        <div className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div
+          className="p-3"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+        >
           <p className="text-center text-xs text-zinc-600">
             {conversations.length}/10 saved
           </p>
@@ -283,10 +351,10 @@ export default function ChatPage() {
         {/* Header */}
         <div
           style={{
-            borderBottom: "1px solid rgba(255,255,255,0.05)",
-            padding: "12px 16px",
-            backgroundColor: "rgba(5, 5, 16, 0.97)",
-            backdropFilter: "blur(20px)",
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            padding: '12px 16px',
+            backgroundColor: 'rgba(5, 5, 16, 0.97)',
+            backdropFilter: 'blur(20px)',
           }}
         >
           <div className="mx-auto flex max-w-3xl items-center gap-3">
@@ -295,14 +363,30 @@ export default function ChatPage() {
               onClick={() => setSidebarOpen(true)}
               className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300 lg:hidden"
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
               </svg>
             </button>
             <div className="flex items-center gap-2 flex-1">
               <div className="h-2 w-2 rounded-full bg-teal-400 animate-pulse" />
-              <h1 className="text-lg font-bold gradient-text-teal">Study Chat</h1>
-              {doc && <span className="text-xs text-zinc-500 ml-2">{doc.filename}</span>}
+              <h1 className="text-lg font-bold gradient-text-teal">
+                Study Chat
+              </h1>
+              {doc && (
+                <span className="text-xs text-zinc-500 ml-2">
+                  {doc.filename}
+                </span>
+              )}
             </div>
             <button
               onClick={handleNewChat}
@@ -319,25 +403,41 @@ export default function ChatPage() {
             {messages.length === 0 && (
               <div className="py-20 text-center">
                 <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500/10 to-cyan-500/10">
-                  <svg className="h-8 w-8 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  <svg
+                    className="h-8 w-8 text-teal-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
                   </svg>
                 </div>
-                <h2 className="mb-2 text-xl font-semibold text-zinc-100">Ask anything about your document</h2>
+                <h2 className="mb-2 text-xl font-semibold text-zinc-100">
+                  Ask anything about your document
+                </h2>
                 <p className="mb-8 text-sm text-zinc-500">
-                  I have access to your full document and study materials. Ask me questions,
-                  request explanations, or explore topics in depth.
+                  I have access to your full document and study materials. Ask
+                  me questions, request explanations, or explore topics in
+                  depth.
                 </p>
                 <div className="mx-auto grid max-w-lg gap-3 sm:grid-cols-2">
                   {[
-                    "Summarize the key points",
-                    "Explain the most important concept",
-                    "What are the main takeaways?",
-                    "Quiz me on this material",
+                    'Summarize the key points',
+                    'Explain the most important concept',
+                    'What are the main takeaways?',
+                    'Quiz me on this material',
                   ].map((suggestion) => (
                     <button
                       key={suggestion}
-                      onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                      onClick={() => {
+                        setInput(suggestion);
+                        inputRef.current?.focus();
+                      }}
                       className="rounded-xl glass-teal px-4 py-3 text-left text-sm text-zinc-400 transition-all glass-hover hover-glow-teal"
                     >
                       {suggestion}
@@ -348,15 +448,18 @@ export default function ChatPage() {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                key={i}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
                 <div
                   className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-white"
-                      : "glass text-zinc-200"
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-white'
+                      : 'glass text-zinc-200'
                   }`}
                 >
-                  {msg.role === "assistant" ? (
+                  {msg.role === 'assistant' ? (
                     <div className="prose prose-invert prose-sm max-w-none">
                       <MessageContent content={msg.content} />
                     </div>
@@ -388,10 +491,10 @@ export default function ChatPage() {
         {/* Input area */}
         <div
           style={{
-            borderTop: "1px solid rgba(255,255,255,0.05)",
-            padding: "16px",
-            backgroundColor: "rgba(5, 5, 16, 0.97)",
-            backdropFilter: "blur(20px)",
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+            padding: '16px',
+            backgroundColor: 'rgba(5, 5, 16, 0.97)',
+            backdropFilter: 'blur(20px)',
           }}
         >
           <div className="mx-auto flex max-w-3xl gap-3">
@@ -408,10 +511,20 @@ export default function ChatPage() {
             <button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="shrink-0 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 px-5 py-3 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:opacity-40"
+              className="shrink-0 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 px-5 py-3 text-sm font-medium text-white transition-all  disabled:opacity-40"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
               </svg>
             </button>
           </div>
@@ -424,7 +537,7 @@ export default function ChatPage() {
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
+  if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
@@ -435,47 +548,76 @@ function formatTimeAgo(dateStr: string): string {
 
 /** Simple markdown-ish renderer for assistant messages */
 function MessageContent({ content }: { content: string }) {
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   const elements: React.ReactNode[] = [];
   let i = 0;
 
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith("### ")) {
-      elements.push(<h4 key={i} className="mt-3 mb-1 text-sm font-semibold text-zinc-100">{formatInline(line.slice(4))}</h4>);
-    } else if (line.startsWith("## ")) {
-      elements.push(<h3 key={i} className="mt-3 mb-1 text-base font-semibold text-zinc-100">{formatInline(line.slice(3))}</h3>);
-    } else if (line.startsWith("# ")) {
-      elements.push(<h2 key={i} className="mt-4 mb-2 text-lg font-bold text-zinc-100">{formatInline(line.slice(2))}</h2>);
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+    if (line.startsWith('### ')) {
+      elements.push(
+        <h4 key={i} className="mt-3 mb-1 text-sm font-semibold text-zinc-100">
+          {formatInline(line.slice(4))}
+        </h4>,
+      );
+    } else if (line.startsWith('## ')) {
+      elements.push(
+        <h3 key={i} className="mt-3 mb-1 text-base font-semibold text-zinc-100">
+          {formatInline(line.slice(3))}
+        </h3>,
+      );
+    } else if (line.startsWith('# ')) {
+      elements.push(
+        <h2 key={i} className="mt-4 mb-2 text-lg font-bold text-zinc-100">
+          {formatInline(line.slice(2))}
+        </h2>,
+      );
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
       const items: string[] = [];
-      while (i < lines.length && (lines[i].startsWith("- ") || lines[i].startsWith("* "))) {
+      while (
+        i < lines.length &&
+        (lines[i].startsWith('- ') || lines[i].startsWith('* '))
+      ) {
         items.push(lines[i].slice(2));
         i++;
       }
       elements.push(
-        <ul key={`ul-${i}`} className="my-1 ml-4 list-disc space-y-0.5 text-sm text-zinc-300">
-          {items.map((item, j) => <li key={j}>{formatInline(item)}</li>)}
-        </ul>
+        <ul
+          key={`ul-${i}`}
+          className="my-1 ml-4 list-disc space-y-0.5 text-sm text-zinc-300"
+        >
+          {items.map((item, j) => (
+            <li key={j}>{formatInline(item)}</li>
+          ))}
+        </ul>,
       );
       continue;
     } else if (/^\d+\.\s/.test(line)) {
       const items: string[] = [];
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s/, ""));
+        items.push(lines[i].replace(/^\d+\.\s/, ''));
         i++;
       }
       elements.push(
-        <ol key={`ol-${i}`} className="my-1 ml-4 list-decimal space-y-0.5 text-sm text-zinc-300">
-          {items.map((item, j) => <li key={j}>{formatInline(item)}</li>)}
-        </ol>
+        <ol
+          key={`ol-${i}`}
+          className="my-1 ml-4 list-decimal space-y-0.5 text-sm text-zinc-300"
+        >
+          {items.map((item, j) => (
+            <li key={j}>{formatInline(item)}</li>
+          ))}
+        </ol>,
       );
       continue;
-    } else if (line.trim() === "") {
+    } else if (line.trim() === '') {
       elements.push(<div key={i} className="h-2" />);
     } else {
-      elements.push(<p key={i} className="text-sm text-zinc-300 leading-relaxed">{formatInline(line)}</p>);
+      elements.push(
+        <p key={i} className="text-sm text-zinc-300 leading-relaxed">
+          {formatInline(line)}
+        </p>,
+      );
     }
     i++;
   }
@@ -503,14 +645,29 @@ function formatInline(text: string): React.ReactNode {
 
     if (nextBold <= nextCode && boldMatch) {
       if (boldMatch.index! > 0) parts.push(remaining.slice(0, boldMatch.index));
-      parts.push(<strong key={key++} className="font-semibold text-zinc-100">{boldMatch[1]}</strong>);
+      parts.push(
+        <strong key={key++} className="font-semibold text-zinc-100">
+          {boldMatch[1]}
+        </strong>,
+      );
       remaining = remaining.slice(boldMatch.index! + boldMatch[0].length);
     } else if (codeMatch) {
       if (codeMatch.index! > 0) parts.push(remaining.slice(0, codeMatch.index));
-      parts.push(<code key={key++} className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-teal-300">{codeMatch[1]}</code>);
+      parts.push(
+        <code
+          key={key++}
+          className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-teal-300"
+        >
+          {codeMatch[1]}
+        </code>,
+      );
       remaining = remaining.slice(codeMatch.index! + codeMatch[0].length);
     }
   }
 
-  return parts.length === 1 && typeof parts[0] === "string" ? parts[0] : <>{parts}</>;
+  return parts.length === 1 && typeof parts[0] === 'string' ? (
+    parts[0]
+  ) : (
+    <>{parts}</>
+  );
 }

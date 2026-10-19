@@ -1,75 +1,62 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
-import type { ConceptNode } from "@/types";
-
+import { NextRequest, NextResponse } from 'next/server';
+import { database } from '@/lib/database';
+import { orderedTopicNames, workbenchGroups } from '@/lib/workbench-learning';
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  { params }: { params: Promise<{ documentId: string }> },
 ) {
   try {
     const { documentId } = await params;
-
-    // Fetch concept graph nodes
-    const { data: graph, error: graphError } = await supabase
-      .from("concept_graphs")
-      .select("nodes")
-      .eq("document_id", documentId)
-      .single();
-
-    if (graphError || !graph) {
+    const graph = await database
+      .from('concept_graphs')
+      .select('nodes,edges')
+      .eq('document_id', documentId)
+      .maybeSingle();
+    if (graph.error) throw new Error('Graph unavailable');
+    if (!graph.data)
       return NextResponse.json(
-        { error: "Concept graph not found" },
-        { status: 404 }
+        { error: 'This document has no concept map yet.' },
+        { status: 404 },
       );
-    }
-
-    const nodes = graph.nodes as ConceptNode[];
-
-    // Group nodes by their group field
-    const groupMap = new Map<string, ConceptNode[]>();
-    for (const n of nodes) {
-      if (n.id === "central") continue; // skip central hub node
-      const arr = groupMap.get(n.group) ?? [];
-      arr.push(n);
-      groupMap.set(n.group, arr);
-    }
-
-    // Fetch mastery data (now keyed by group_name)
-    const { data: masteryRows } = await supabase
-      .from("workbench_mastery")
-      .select("group_name, stage_completed")
-      .eq("document_id", documentId);
-
-    const masteryMap = new Map(
-      (masteryRows ?? []).map((m: { group_name: string; stage_completed: number }) => [m.group_name, m.stage_completed])
-    );
-
-    // Fetch which groups already have content
-    const { data: contentRows } = await supabase
-      .from("workbench_content")
-      .select("group_name, required_node_ids")
-      .eq("document_id", documentId);
-
-    const contentMap = new Map(
-      (contentRows ?? []).map((c: { group_name: string; required_node_ids: string[] }) => [c.group_name, c.required_node_ids ?? []])
-    );
-
-    // Build group status array
-    const overview = Array.from(groupMap.entries()).map(([groupName, groupNodes]) => ({
-      group: groupName,
-      nodeIds: groupNodes.map((n) => n.id),
-      nodeLabels: groupNodes.map((n) => n.label),
-      requiredNodeIds: contentMap.get(groupName) ?? [],
-      stageCompleted: masteryMap.get(groupName) ?? 0,
-      hasContent: contentMap.has(groupName),
-    }));
-
-    return NextResponse.json(overview);
-  } catch (error) {
-    console.error("Workbench overview error:", error);
+    const { graph: normalized, groups } = workbenchGroups(graph.data);
+    const [sessions, content, legacy] = await Promise.all([
+      database
+        .from('workbench_sessions')
+        .select()
+        .eq('document_id', documentId),
+      database
+        .from('workbench_content')
+        .select('group_name,required_node_ids')
+        .eq('document_id', documentId),
+      database
+        .from('workbench_mastery')
+        .select('group_name,stage_completed')
+        .eq('document_id', documentId),
+    ]);
+    if (sessions.error || content.error || legacy.error)
+      throw new Error('Progress unavailable');
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load overview" },
-      { status: 500 }
+      orderedTopicNames(normalized, groups).map((group) => {
+        const nodes = groups.get(group)!;
+        const lesson = content.data.find((c) => c.group_name === group);
+        return {
+          group,
+          nodeIds: nodes.map((n) => n.id),
+          nodeLabels: nodes.map((n) => n.label),
+          requiredNodeIds: lesson?.required_node_ids ?? [],
+          hasContent: !!lesson,
+          stageCompleted:
+            legacy.data.find((m) => m.group_name === group)?.stage_completed ??
+            0,
+          session: sessions.data.find((s) => s.group_name === group) ?? null,
+        };
+      }),
+    );
+  } catch (error) {
+    console.error('Workbench overview failed:', error);
+    return NextResponse.json(
+      { error: 'Could not load your topics and progress. Please retry.' },
+      { status: 503 },
     );
   }
 }

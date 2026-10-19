@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import type { QuestionType, QuizSettings } from "@/types";
+import { useState } from 'react';
+import type { QuestionType, QuizSettings } from '@/types';
 
 interface QuizSettingsProps {
   totalQuestionsByType: Record<QuestionType, number>;
@@ -9,11 +9,11 @@ interface QuizSettingsProps {
 }
 
 const TYPE_LABELS: Record<QuestionType, string> = {
-  mcq: "Multiple Choice",
-  multiple_select: "Multiple Select",
-  short_answer: "Short Answer",
-  nclex: "NCLEX Style",
-  engineering: "Engineering Workout",
+  mcq: 'Multiple Choice',
+  multiple_select: 'Multiple Select',
+  short_answer: 'Short Answer',
+  nclex: 'NCLEX Style',
+  engineering: 'Engineering Workout',
 };
 
 export default function QuizSettingsPanel({
@@ -22,25 +22,25 @@ export default function QuizSettingsPanel({
 }: QuizSettingsProps) {
   const totalAvailable = Object.values(totalQuestionsByType).reduce(
     (a, b) => a + b,
-    0
+    0,
   );
 
   const [selectedTypes, setSelectedTypes] = useState<Set<QuestionType>>(
     new Set(
       (Object.keys(totalQuestionsByType) as QuestionType[]).filter(
-        (t) => totalQuestionsByType[t] > 0
-      )
-    )
+        (t) => totalQuestionsByType[t] > 0,
+      ),
+    ),
   );
 
   const availableForSelected = [...selectedTypes].reduce(
     (sum, t) => sum + (totalQuestionsByType[t] || 0),
-    0
+    0,
   );
 
   const maxQuestions = Math.min(20, availableForSelected);
   const [questionCount, setQuestionCount] = useState(
-    Math.min(10, maxQuestions)
+    Math.min(10, maxQuestions),
   );
 
   const toggleType = (type: QuestionType) => {
@@ -59,8 +59,8 @@ export default function QuizSettingsPanel({
     20,
     [...selectedTypes].reduce(
       (sum, t) => sum + (totalQuestionsByType[t] || 0),
-      0
-    )
+      0,
+    ),
   );
   const effectiveCount = Math.min(questionCount, effectiveMax);
 
@@ -98,7 +98,9 @@ export default function QuizSettingsPanel({
               <label
                 key={type}
                 className={`flex cursor-pointer items-center gap-3 rounded-xl glass px-4 py-3 transition-all ${
-                  selectedTypes.has(type) ? "border-purple-500/30 glow-purple" : "glass-hover"
+                  selectedTypes.has(type)
+                    ? 'border-purple-500/30 glow-purple'
+                    : 'glass-hover'
                 }`}
               >
                 <input
@@ -110,9 +112,7 @@ export default function QuizSettingsPanel({
                 <span className="flex-1 text-sm font-medium text-zinc-200">
                   {TYPE_LABELS[type]}
                 </span>
-                <span className="text-xs text-zinc-500">
-                  {count} available
-                </span>
+                <span className="text-xs text-zinc-500">{count} available</span>
               </label>
             );
           })}
@@ -122,10 +122,8 @@ export default function QuizSettingsPanel({
       {/* Question count slider */}
       <div className="mb-6">
         <label className="mb-2 block text-sm font-medium text-zinc-400">
-          Number of Questions:{" "}
-          <span className="gradient-text-blue font-bold">
-            {effectiveCount}
-          </span>
+          Number of Questions:{' '}
+          <span className="gradient-text-blue font-bold">{effectiveCount}</span>
         </label>
         <input
           type="range"
@@ -145,7 +143,7 @@ export default function QuizSettingsPanel({
       <button
         onClick={handleStart}
         disabled={selectedTypes.size === 0 || effectiveCount === 0}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 py-3 text-sm font-medium text-white transition-all hover:shadow-[0_0_30px_rgba(139,92,246,0.3)] disabled:opacity-50"
+        className="w-full rounded-xl bg-emerald-300 py-3 text-sm font-medium text-white transition-all  disabled:opacity-50"
       >
         Start Quiz
       </button>

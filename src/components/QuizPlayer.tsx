@@ -1,19 +1,22 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import type { QuizQuestion, QuestionType, QuizAnswer } from "@/types";
-import ScoreDisplay from "./ScoreDisplay";
-import NclexRationaleCard from "./NclexRationaleCard";
+import { useState } from 'react';
+import type { QuizQuestion, QuestionType, QuizAnswer } from '@/types';
+import ScoreDisplay from './ScoreDisplay';
+import NclexRationaleCard from './NclexRationaleCard';
 
 interface QuizPlayerProps {
   questions: QuizQuestion[];
   documentId: string;
-  onQuizComplete?: (score: {
-    total_questions: number;
-    correct_answers: number;
-    score_percentage: number;
-    answers: QuizAnswer[];
-  }, questions: QuizQuestion[]) => void;
+  onQuizComplete?: (
+    score: {
+      total_questions: number;
+      correct_answers: number;
+      score_percentage: number;
+      answers: QuizAnswer[];
+    },
+    questions: QuizQuestion[],
+  ) => void;
 }
 
 interface UserAnswer {
@@ -29,12 +32,14 @@ export default function QuizPlayer({
   documentId,
   onQuizComplete,
 }: QuizPlayerProps) {
+  const [submitError, setSubmitError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [selectedAnswers, setSelectedAnswers] = useState<Set<number>>(
-    new Set()
+    new Set(),
   );
-  const [typedAnswer, setTypedAnswer] = useState("");
+  const [typedAnswer, setTypedAnswer] = useState('');
   const [showResult, setShowResult] = useState(false);
   const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
   const [quizComplete, setQuizComplete] = useState(false);
@@ -60,28 +65,28 @@ export default function QuizPlayer({
   }
 
   const question = questions[currentIndex];
-  const questionType = question.question_type || "mcq";
-  const choiceLabels = ["A", "B", "C", "D"];
+  const questionType = question.question_type || 'mcq';
+  const choiceLabels = ['A', 'B', 'C', 'D'];
 
   const isCurrentCorrect = (): boolean => {
     switch (questionType) {
-      case "mcq":
-      case "nclex":
+      case 'mcq':
+      case 'nclex':
         return selectedAnswer === question.correct_answer;
-      case "multiple_select": {
+      case 'multiple_select': {
         const correctSet = new Set(question.correct_answers || []);
         return (
           correctSet.size === selectedAnswers.size &&
           [...correctSet].every((v) => selectedAnswers.has(v))
         );
       }
-      case "short_answer":
+      case 'short_answer':
         return (
           typedAnswer.trim().toLowerCase() ===
-          (question.correct_answer_text || "").trim().toLowerCase()
+          (question.correct_answer_text || '').trim().toLowerCase()
         );
-      case "engineering": {
-        const typed = parseFloat(typedAnswer.replace(/[^\d.\-eE]/g, ""));
+      case 'engineering': {
+        const typed = parseFloat(typedAnswer.replace(/[^\d.\-eE]/g, ''));
         return (
           !Number.isNaN(typed) &&
           question.numeric_answer !== null &&
@@ -128,56 +133,58 @@ export default function QuizPlayer({
   const handleNext = async () => {
     const currentAnswer = buildCurrentAnswer();
     const newAnswers = [...userAnswers, currentAnswer];
-    setUserAnswers(newAnswers);
+    if (isSubmitting) return;
+    setSubmitError('');
 
     if (currentIndex === questions.length - 1) {
+      setIsSubmitting(true);
       try {
         const res = await fetch(`/api/quiz/${documentId}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ answers: newAnswers }),
         });
         const data = await res.json();
+        if (!res.ok)
+          throw new Error(data.error || 'Could not save quiz results.');
         setScore(data);
         setQuizComplete(true);
         onQuizComplete?.(data, questions);
       } catch {
-        const graded = newAnswers.map((a) => ({
-          ...a,
-          is_correct: false,
-        }));
-        setScore({
-          total_questions: questions.length,
-          correct_answers: 0,
-          score_percentage: 0,
-          answers: graded,
-        });
-        setQuizComplete(true);
+        setSubmitError(
+          'Your answers are still here. Could not save the quiz results; try See Results again.',
+        );
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
+      setUserAnswers(newAnswers);
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
       setSelectedAnswers(new Set());
-      setTypedAnswer("");
+      setTypedAnswer('');
       setShowResult(false);
     }
   };
 
   return (
     <div>
+      {submitError && (
+        <p role="alert" className="inline-error">
+          {submitError}
+        </p>
+      )}
       {/* Progress bar */}
       <div className="mb-6">
         <div className="mb-2 flex justify-between text-sm text-zinc-500">
           <span>
             Question {currentIndex + 1} of {questions.length}
           </span>
-          <span>
-            {Math.round((currentIndex / questions.length) * 100)}%
-          </span>
+          <span>{Math.round((currentIndex / questions.length) * 100)}%</span>
         </div>
         <div className="h-1.5 rounded-full bg-white/5">
           <div
-            className="h-1.5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
+            className="h-1.5 rounded-full bg-emerald-300 transition-all"
             style={{
               width: `${(currentIndex / questions.length) * 100}%`,
             }}
@@ -188,35 +195,37 @@ export default function QuizPlayer({
       {/* Question type badge */}
       <div className="mb-3">
         <span className="inline-block rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400 border border-white/10">
-          {questionType === "mcq" && "Multiple Choice"}
-          {questionType === "multiple_select" && "Select All That Apply"}
-          {questionType === "short_answer" && "Short Answer"}
-          {questionType === "nclex" && "NCLEX Style"}
-          {questionType === "engineering" && "Engineering Workout"}
+          {questionType === 'mcq' && 'Multiple Choice'}
+          {questionType === 'multiple_select' && 'Select All That Apply'}
+          {questionType === 'short_answer' && 'Short Answer'}
+          {questionType === 'nclex' && 'NCLEX Style'}
+          {questionType === 'engineering' && 'Engineering Workout'}
         </span>
       </div>
 
       {/* Question */}
-      <h2 className="mb-6 text-lg font-semibold text-zinc-100">{question.question}</h2>
+      <h2 className="mb-6 text-lg font-semibold text-zinc-100">
+        {question.question}
+      </h2>
 
       {/* MCQ choices */}
-      {questionType === "mcq" && (
+      {questionType === 'mcq' && (
         <div className="space-y-3">
           {question.choices.map((choice, i) => {
-            let style = "glass glass-hover";
+            let style = 'glass glass-hover';
             if (showResult) {
               if (i === question.correct_answer) {
-                style = "border-emerald-500/40 bg-emerald-500/10 glow-green";
+                style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
               } else if (
                 i === selectedAnswer &&
                 i !== question.correct_answer
               ) {
-                style = "border-red-500/40 bg-red-500/10";
+                style = 'border-red-500/40 bg-red-500/10';
               } else {
-                style = "glass opacity-40";
+                style = 'glass opacity-40';
               }
             } else if (i === selectedAnswer) {
-              style = "border-purple-500/40 bg-purple-500/10 glow-purple";
+              style = 'border-purple-500/40 bg-purple-500/10 glow-purple';
             }
 
             return (
@@ -236,21 +245,21 @@ export default function QuizPlayer({
         </div>
       )}
 
-      {questionType === "nclex" && (
+      {questionType === 'nclex' && (
         <>
           <div className="space-y-3">
             {question.choices.map((choice, i) => {
-              let style = "glass glass-hover";
+              let style = 'glass glass-hover';
               if (showResult) {
                 if (i === question.correct_answer) {
-                  style = "border-emerald-500/40 bg-emerald-500/10 glow-green";
+                  style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
                 } else if (i === selectedAnswer) {
-                  style = "border-red-500/40 bg-red-500/10";
+                  style = 'border-red-500/40 bg-red-500/10';
                 } else {
-                  style = "glass opacity-40";
+                  style = 'glass opacity-40';
                 }
               } else if (i === selectedAnswer) {
-                style = "border-emerald-500/40 bg-emerald-500/10";
+                style = 'border-emerald-500/40 bg-emerald-500/10';
               }
 
               return (
@@ -272,24 +281,24 @@ export default function QuizPlayer({
       )}
 
       {/* Multiple select choices */}
-      {questionType === "multiple_select" && (
+      {questionType === 'multiple_select' && (
         <>
           <div className="space-y-3">
             {question.choices.map((choice, i) => {
               const isSelected = selectedAnswers.has(i);
               const correctSet = new Set(question.correct_answers || []);
 
-              let style = "glass glass-hover";
+              let style = 'glass glass-hover';
               if (showResult) {
                 if (correctSet.has(i)) {
-                  style = "border-emerald-500/40 bg-emerald-500/10 glow-green";
+                  style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
                 } else if (isSelected && !correctSet.has(i)) {
-                  style = "border-red-500/40 bg-red-500/10";
+                  style = 'border-red-500/40 bg-red-500/10';
                 } else {
-                  style = "glass opacity-40";
+                  style = 'glass opacity-40';
                 }
               } else if (isSelected) {
-                style = "border-purple-500/40 bg-purple-500/10 glow-purple";
+                style = 'border-purple-500/40 bg-purple-500/10 glow-purple';
               }
 
               return (
@@ -302,11 +311,11 @@ export default function QuizPlayer({
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs ${
                       isSelected
-                        ? "border-purple-500 bg-purple-500 text-white"
-                        : "border-zinc-600"
+                        ? 'border-purple-500 bg-purple-500 text-white'
+                        : 'border-zinc-600'
                     }`}
                   >
-                    {isSelected && "\u2713"}
+                    {isSelected && '\u2713'}
                   </span>
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
                     {choiceLabels[i]}
@@ -320,7 +329,7 @@ export default function QuizPlayer({
             <button
               onClick={handleSubmitAnswer}
               disabled={selectedAnswers.size === 0}
-              className="mt-4 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(139,92,246,0.3)] disabled:opacity-50"
+              className="mt-4 rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
             >
               Submit Answer
             </button>
@@ -329,7 +338,7 @@ export default function QuizPlayer({
       )}
 
       {/* Short answer input */}
-      {questionType === "short_answer" && (
+      {questionType === 'short_answer' && (
         <>
           <div className="mb-4">
             <input
@@ -339,7 +348,7 @@ export default function QuizPlayer({
               disabled={showResult}
               placeholder="Type your answer..."
               onKeyDown={(e) => {
-                if (e.key === "Enter" && typedAnswer.trim() && !showResult) {
+                if (e.key === 'Enter' && typedAnswer.trim() && !showResult) {
                   handleSubmitAnswer();
                 }
               }}
@@ -350,7 +359,7 @@ export default function QuizPlayer({
             <button
               onClick={handleSubmitAnswer}
               disabled={!typedAnswer.trim()}
-              className="rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(139,92,246,0.3)] disabled:opacity-50"
+              className="rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
             >
               Submit Answer
             </button>
@@ -358,12 +367,15 @@ export default function QuizPlayer({
         </>
       )}
 
-      {questionType === "engineering" && (
+      {questionType === 'engineering' && (
         <>
           <div className="mb-4 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300/80">Solve</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300/80">
+              Solve
+            </p>
             <p className="mt-1 text-sm text-zinc-300">
-              Enter the numeric result{question.answer_unit ? ` in ${question.answer_unit}` : ""}.
+              Enter the numeric result
+              {question.answer_unit ? ` in ${question.answer_unit}` : ''}.
             </p>
           </div>
           <div className="mb-4 flex gap-2">
@@ -374,7 +386,7 @@ export default function QuizPlayer({
               disabled={showResult}
               placeholder="Enter numerical value..."
               onKeyDown={(e) => {
-                if (e.key === "Enter" && typedAnswer.trim() && !showResult) {
+                if (e.key === 'Enter' && typedAnswer.trim() && !showResult) {
                   handleSubmitAnswer();
                 }
               }}
@@ -390,7 +402,7 @@ export default function QuizPlayer({
             <button
               onClick={handleSubmitAnswer}
               disabled={!typedAnswer.trim()}
-              className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(245,158,11,0.3)] disabled:opacity-50"
+              className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
             >
               Submit Answer
             </button>
@@ -407,62 +419,65 @@ export default function QuizPlayer({
             </div>
           ) : (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-red-400">
-              {questionType === "mcq" && (
+              {questionType === 'mcq' && (
                 <>
-                  Incorrect. The correct answer is{" "}
-                  {choiceLabels[question.correct_answer]}:{" "}
+                  Incorrect. The correct answer is{' '}
+                  {choiceLabels[question.correct_answer]}:{' '}
                   {question.choices[question.correct_answer]}
                 </>
               )}
-              {questionType === "multiple_select" && (
+              {questionType === 'multiple_select' && (
                 <>
-                  Incorrect. The correct answers are:{" "}
+                  Incorrect. The correct answers are:{' '}
                   {(question.correct_answers || [])
                     .map((i) => `${choiceLabels[i]}: ${question.choices[i]}`)
-                    .join(", ")}
+                    .join(', ')}
                 </>
               )}
-              {questionType === "short_answer" && (
+              {questionType === 'short_answer' && (
                 <>
-                  Incorrect. The correct answer is:{" "}
+                  Incorrect. The correct answer is:{' '}
                   {question.correct_answer_text}
                 </>
               )}
-              {questionType === "nclex" && (
+              {questionType === 'nclex' && (
                 <>
-                  Incorrect. The best answer is{" "}
-                  {choiceLabels[question.correct_answer]}:{" "}
+                  Incorrect. The best answer is{' '}
+                  {choiceLabels[question.correct_answer]}:{' '}
                   {question.choices[question.correct_answer]}
                 </>
               )}
-              {questionType === "engineering" && (
+              {questionType === 'engineering' && (
                 <>
-                  Incorrect. The correct answer is:{" "}
-                  {question.numeric_answer} {question.answer_unit}
+                  Incorrect. The correct answer is: {question.numeric_answer}{' '}
+                  {question.answer_unit}
                 </>
               )}
             </div>
           )}
 
-          {question.explanation && (
-            questionType === "nclex" ? (
+          {question.explanation &&
+            (questionType === 'nclex' ? (
               <div className="mt-4">
-                <NclexRationaleCard text={question.explanation} variant="quiz" />
+                <NclexRationaleCard
+                  text={question.explanation}
+                  variant="quiz"
+                />
               </div>
             ) : (
               <p className="mt-3 text-sm text-zinc-500">
                 {question.explanation}
               </p>
-            )
-          )}
+            ))}
 
           <button
             onClick={handleNext}
-            className="mt-4 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+            disabled={isSubmitting}
+            className="mt-4 rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all "
           >
             {currentIndex === questions.length - 1
-              ? "See Results"
-              : "Next Question"}
+              ? 'See Results'
+              : 'Next Question'}
           </button>
         </div>
       )}

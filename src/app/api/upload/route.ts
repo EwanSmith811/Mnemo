@@ -1,269 +1,237 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { extractText } from "@/lib/document-parser";
-import { prepareTextForLLM } from "@/lib/text-chunker";
-import { generateFlashcardsAndQuiz } from "@/lib/generate-content";
-import { generateConceptGraph } from "@/lib/generate-graph";
-import type { StudyMode } from "@/types";
+import { NextRequest, NextResponse } from 'next/server';
+import { database } from '@/lib/database';
+import { extractText } from '@/lib/document-parser';
+import { getDocumentFileType } from '@/lib/document-formats';
+import { prepareTextForLLM } from '@/lib/text-chunker';
+import { generateFlashcardsAndQuiz } from '@/lib/generate-content';
+import { generateConceptGraph } from '@/lib/generate-graph';
+import { studyContentHash, type UploadClaim } from '@/lib/upload-registry';
+import type { UploadEvent } from '@/lib/upload-progress';
+export const maxDuration = 300;
 
-class UploadFailure extends Error {
-  detail?: string;
-  stage: string;
-  status: number;
-
-  constructor(message: string, options: { detail?: string; stage: string; status?: number }) {
-    super(message);
-    this.name = "UploadFailure";
-    this.detail = options.detail;
-    this.stage = options.stage;
-    this.status = options.status ?? 500;
-  }
-}
-
-function createUploadFailure(error: unknown) {
-  if (error instanceof UploadFailure) {
-    return error;
-  }
-
-  const message = error instanceof Error ? error.message : "Unknown upload error";
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("too little text")) {
-    return new UploadFailure(
-      "We could not find enough readable text in that file to build study materials.",
+async function prepareUpload(
+  request: NextRequest,
+  emit: (event: UploadEvent) => void,
+) {
+  let claim: UploadClaim | undefined;
+  try {
+    if (!process.env.OPENAI_API_KEY || !process.env.DATABASE_URL)
+      return NextResponse.json(
+        {
+          error: 'Study generation is not configured.',
+          detail:
+            'Set OPENAI_API_KEY and DATABASE_URL on the server, then run the Mnemo migration.',
+        },
+        { status: 503 },
+      );
+    const form = await request.formData();
+    const file = form.get('file');
+    const mode = form.get('studyMode');
+    if (!(file instanceof File) || (mode !== 'nursing' && mode !== 'engineers'))
+      return NextResponse.json(
+        { error: 'Choose a file and study focus.' },
+        { status: 400 },
+      );
+    if (!file.size || file.size > 4 * 1024 * 1024)
+      return NextResponse.json(
+        { error: 'Choose a file smaller than 4 MB.' },
+        { status: 413 },
+      );
+    const extension = getDocumentFileType(file.name);
+    if (!extension)
+      return NextResponse.json(
+        {
+          error: 'Choose a PDF or PowerPoint file (.pptx, .ppt, .pps, .ppsx).',
+        },
+        { status: 400 },
+      );
+    emit({ type: 'progress', stage: 'reading' });
+    let rawText: string;
+    try {
+      rawText = await extractText(
+        Buffer.from(await file.arrayBuffer()),
+        extension,
+      );
+    } catch (error) {
+      console.error('Document extraction failed:', error);
+      return NextResponse.json(
+        {
+          error: 'Could not read this file.',
+          detail:
+            'Use an unencrypted, text-based PDF or PowerPoint file. If an older slideshow fails, export it as PPTX or PDF.',
+        },
+        { status: 400 },
+      );
+    }
+    if (rawText.trim().length < 100)
+      return NextResponse.json(
+        {
+          error: 'This document contains too little readable text.',
+          detail: 'Use a text-based document instead of scanned images.',
+        },
+        { status: 400 },
+      );
+    const { text, wasTruncated } = prepareTextForLLM(rawText);
+    const identity = await database.uploads.claim(studyContentHash(text), mode);
+    if (identity.kind === 'existing')
+      return NextResponse.json({
+        ...identity.document,
+        study_mode: mode,
+        was_truncated: wasTruncated,
+        reused: true,
+      });
+    if (identity.kind === 'pending')
+      return NextResponse.json(
+        {
+          error: 'This document is already being prepared.',
+          detail:
+            'Let the first upload finish, then retry to open it, or check your document library. No second generation was started.',
+        },
+        { status: 409 },
+      );
+    claim = identity.claim;
+    // Independent model calls overlap; the transaction only holds a connection
+    // while persisting the finished result, never while waiting on generation.
+    emit({ type: 'progress', stage: 'generating' });
+    const [content, graph] = await Promise.all([
+      generateFlashcardsAndQuiz(text, file.name, mode).then((content) => {
+        emit({ type: 'progress', stage: 'generating', ready: 'materials' });
+        return content;
+      }),
+      generateConceptGraph(text, file.name).then((graph) => {
+        emit({ type: 'progress', stage: 'generating', ready: 'graph' });
+        return graph;
+      }),
+    ]);
+    emit({ type: 'progress', stage: 'saving' });
+    const doc = await database.transaction(async (db) => {
+      const { data: document, error } = await db
+        .from('documents')
+        .insert({
+          filename: file.name,
+          file_type: extension,
+          study_mode: mode,
+          file_size_bytes: file.size,
+          extracted_text_length: rawText.length,
+          content: text,
+          status: 'completed',
+          concept_node_count: graph.nodes.length,
+        })
+        .select('id')
+        .single();
+      if (error) throw new Error(error.message);
+      const rows = [
+        await db.from('flashcards').insert(
+          content.flashcards.map((f) => ({
+            document_id: document.id,
+            term: f.term,
+            definition: f.definition,
+          })),
+        ),
+        await db.from('quiz_questions').insert(
+          content.quiz_questions.map((q) => ({
+            ...q,
+            document_id: document.id,
+            correct_answers: q.correct_answers.length
+              ? q.correct_answers
+              : null,
+            correct_answer_text: q.correct_answer_text || null,
+            numeric_answer: q.numeric_answer ?? null,
+            answer_tolerance: q.answer_tolerance ?? null,
+            answer_unit: q.answer_unit ?? null,
+          })),
+        ),
+        await db.from('topic_summaries').insert(
+          content.topic_summaries.map((s) => ({
+            ...s,
+            document_id: document.id,
+          })),
+        ),
+        await db.from('concept_graphs').insert({
+          document_id: document.id,
+          nodes: graph.nodes,
+          edges: graph.edges,
+        }),
+      ];
+      for (const result of rows)
+        if (result.error) throw new Error(result.error.message);
+      return document;
+    }, claim);
+    return NextResponse.json({
+      document_id: doc.id,
+      study_mode: mode,
+      flashcard_count: content.flashcards.length,
+      quiz_question_count: content.quiz_questions.length,
+      topic_summary_count: content.topic_summaries.length,
+      concept_node_count: graph.nodes.length,
+      was_truncated: wasTruncated,
+    });
+  } catch (error) {
+    console.error('Upload failed:', error);
+    return NextResponse.json(
       {
-        detail: "Try a text-heavy PDF or PPTX, or make sure the file is not just images or screenshots.",
-        stage: "text_extraction",
-        status: 400,
-      }
+        error: 'Could not prepare the study material.',
+        detail:
+          'No partial document was saved. Check your server configuration and try again.',
+      },
+      { status: 500 },
     );
+  } finally {
+    if (claim)
+      await database.uploads
+        .release(claim)
+        .catch((error) =>
+          console.error('Could not release Mnemo upload claim:', error),
+        );
   }
-
-  if (normalized.includes("missing groq_api_key")) {
-    return new UploadFailure("AI generation is not configured on the server.", {
-      detail: "The GROQ_API_KEY environment variable is missing, so the model cannot generate study materials.",
-      stage: "configuration",
-      status: 500,
-    });
-  }
-
-  if (normalized.includes("pdf") || normalized.includes("pptx") || normalized.includes("unsupported file type")) {
-    return new UploadFailure("We could not read that file successfully.", {
-      detail: "The file may be corrupted, image-only, password-protected, or saved in an unsupported PDF/PPTX structure.",
-      stage: "file_reading",
-      status: 400,
-    });
-  }
-
-  if (normalized.includes("failed to create document")) {
-    return new UploadFailure("We could not create the document record for this upload.", {
-      detail: message,
-      stage: "database_setup",
-      status: 500,
-    });
-  }
-
-  if (normalized.includes("failed to insert")) {
-    return new UploadFailure("We generated the content, but saving it failed.", {
-      detail: message,
-      stage: "database_write",
-      status: 500,
-    });
-  }
-
-  if (normalized.includes("concept graph")) {
-    return new UploadFailure("The study materials were generated, but concept graph creation failed.", {
-      detail: message,
-      stage: "concept_graph",
-      status: 500,
-    });
-  }
-
-  return new UploadFailure("Upload processing failed.", {
-    detail: message,
-    stage: "processing",
-    status: 500,
-  });
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const studyModeValue = formData.get("studyMode");
-    const studyMode =
-      studyModeValue === "nursing" || studyModeValue === "engineers"
-        ? (studyModeValue as StudyMode)
-        : null;
+  if (!request.headers.get('accept')?.includes('application/x-ndjson'))
+    return prepareUpload(request, () => {});
 
-    if (!file || !studyMode) {
-      return NextResponse.json(
-        {
-          error: "File and study mode are required.",
-          detail: "Select a PDF or PPTX file and choose a study mode before uploading.",
-          stage: "validation",
-        },
-        { status: 400 }
-      );
-    }
-
-    const extension = file.name.split(".").pop()?.toLowerCase();
-    if (extension !== "pdf" && extension !== "pptx") {
-      return NextResponse.json(
-        {
-          error: "Only PDF and PPTX files are supported.",
-          detail: `The file "${file.name}" does not end in .pdf or .pptx.`,
-          stage: "validation",
-        },
-        { status: 400 }
-      );
-    }
-    const fileType = extension as "pdf" | "pptx";
-
-    const { data: doc, error: docError } = await supabase
-      .from("documents")
-      .insert({
-        filename: file.name,
-        file_type: fileType,
-        study_mode: studyMode,
-        file_size_bytes: file.size,
-        status: "processing",
-      })
-      .select()
-      .single();
-
-    if (docError || !doc) {
-      throw new UploadFailure("We could not create the document record for this upload.", {
-        detail: docError?.message,
-        stage: "database_setup",
-      });
-    }
-
-    try {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const rawText = await extractText(buffer, fileType);
-
-      if (rawText.trim().length < 100) {
-        throw new UploadFailure(
-          "We could not find enough readable text in that file to build study materials.",
-          {
-            detail: "Try a text-heavy PDF or PPTX, or make sure the file is not just images or screenshots.",
-            stage: "text_extraction",
-            status: 400,
-          }
-        );
-      }
-
-      const { text: preparedText } = prepareTextForLLM(rawText);
-      const content = await generateFlashcardsAndQuiz(preparedText, file.name, studyMode);
-
-      const flashcardRows = content.flashcards.map((flashcard) => ({
-        document_id: doc.id,
-        term: flashcard.term,
-        definition: flashcard.definition,
-      }));
-
-      const { error: flashcardError } = await supabase.from("flashcards").insert(flashcardRows);
-      if (flashcardError) {
-        throw new UploadFailure("We generated the flashcards, but saving them failed.", {
-          detail: flashcardError.message,
-          stage: "database_write",
+  const encoder = new TextEncoder();
+  let connected = true;
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (event: UploadEvent) => {
+        if (connected)
+          controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
+      };
+      // A heartbeat keeps proxies from treating long model calls as idle.
+      const heartbeat = setInterval(() => emit({ type: 'heartbeat' }), 15000);
+      try {
+        const response = await prepareUpload(request, emit);
+        const data = await response.json();
+        if (response.ok) emit({ type: 'complete', ...data });
+        else
+          emit({
+            type: 'error',
+            message: [data.error, data.detail].filter(Boolean).join(' '),
+          });
+      } catch {
+        emit({
+          type: 'error',
+          message:
+            'The connection was interrupted. Check your document library before retrying.',
         });
+      } finally {
+        clearInterval(heartbeat);
+        if (connected) {
+          connected = false;
+          controller.close();
+        }
       }
-
-      const questionRows = content.quiz_questions.map((question) => ({
-        document_id: doc.id,
-        question: question.question,
-        question_type: question.question_type,
-        choices: question.choices,
-        correct_answer: question.correct_answer,
-        correct_answers: question.correct_answers.length > 0 ? question.correct_answers : null,
-        correct_answer_text: question.correct_answer_text || null,
-        numeric_answer: question.numeric_answer ?? null,
-        answer_tolerance: question.answer_tolerance ?? null,
-        answer_unit: question.answer_unit ?? null,
-        explanation: question.explanation,
-      }));
-
-      const { error: quizError } = await supabase.from("quiz_questions").insert(questionRows);
-      if (quizError) {
-        throw new UploadFailure("We generated the quiz, but saving the questions failed.", {
-          detail: quizError.message,
-          stage: "database_write",
-        });
-      }
-
-      const summaryRows = content.topic_summaries.map((summary) => ({
-        document_id: doc.id,
-        topic_name: summary.topic_name,
-        summary: summary.summary,
-        display_order: summary.display_order,
-      }));
-
-      const { error: summaryError } = await supabase.from("topic_summaries").insert(summaryRows);
-      if (summaryError) {
-        throw new UploadFailure("We generated the topic summaries, but saving them failed.", {
-          detail: summaryError.message,
-          stage: "database_write",
-        });
-      }
-
-      const graphData = await generateConceptGraph(preparedText, file.name);
-
-      const { error: graphError } = await supabase.from("concept_graphs").insert({
-        document_id: doc.id,
-        nodes: graphData.nodes,
-        edges: graphData.edges,
-      });
-
-      if (graphError) {
-        throw new UploadFailure("We generated the study materials, but saving the concept graph failed.", {
-          detail: graphError.message,
-          stage: "concept_graph",
-        });
-      }
-
-      await supabase
-        .from("documents")
-        .update({
-          status: "completed",
-          content: preparedText,
-          extracted_text_length: rawText.length,
-          flashcard_count: content.flashcards.length,
-          quiz_question_count: content.quiz_questions.length,
-          topic_summary_count: content.topic_summaries.length,
-          concept_node_count: graphData.nodes.length,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", doc.id);
-
-      return NextResponse.json({
-        document_id: doc.id,
-        study_mode: studyMode,
-        flashcard_count: content.flashcards.length,
-        quiz_question_count: content.quiz_questions.length,
-        topic_summary_count: content.topic_summaries.length,
-        concept_node_count: graphData.nodes.length,
-      });
-    } catch (processingError) {
-      const { error: cleanupError } = await supabase.from("documents").delete().eq("id", doc.id);
-
-      if (cleanupError) {
-        console.error("Upload cleanup error:", cleanupError);
-      }
-
-      throw processingError;
-    }
-  } catch (error) {
-    const failure = createUploadFailure(error);
-    console.error("Upload error:", failure);
-    return NextResponse.json(
-      {
-        error: failure.message,
-        detail: failure.detail,
-        stage: failure.stage,
-      },
-      { status: failure.status }
-    );
-  }
+    },
+    cancel() {
+      connected = false;
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }

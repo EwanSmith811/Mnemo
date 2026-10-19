@@ -1,8 +1,9 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
-import type { Flashcard } from "@/types";
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalFocus } from '@/lib/use-modal-focus';
+import type { Flashcard } from '@/types';
 
 interface AddFlashcardDialogProps {
   documentId: string;
@@ -16,19 +17,20 @@ export default function AddFlashcardDialog({
   onAdd,
 }: AddFlashcardDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [term, setTerm] = useState("");
-  const [definition, setDefinition] = useState("");
+  const [term, setTerm] = useState('');
+  const [definition, setDefinition] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
+  const panelRef = useModalFocus(isOpen, () => {
+    if (!isSubmitting) setIsOpen(false);
+  });
   // SSR-safe: only portal after mount
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
 
   const openDialog = () => {
     if (isDisabled) return;
-    setTerm("");
-    setDefinition("");
-    setError("");
+    setTerm('');
+    setDefinition('');
+    setError('');
     setIsOpen(true);
   };
 
@@ -39,30 +41,35 @@ export default function AddFlashcardDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!term.trim() || !definition.trim()) {
-      setError("Both fields are required.");
+      setError('Both fields are required.');
       return;
     }
 
     setIsSubmitting(true);
-    setError("");
+    setError('');
 
     try {
       const res = await fetch(`/api/flashcards/${documentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ term: term.trim(), definition: definition.trim() }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          term: term.trim(),
+          definition: definition.trim(),
+        }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to create flashcard");
+        throw new Error(data.error || 'Failed to create flashcard');
       }
 
       const card: Flashcard = await res.json();
       onAdd(card);
       closeDialog();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create flashcard");
+      setError(
+        err instanceof Error ? err.message : 'Failed to create flashcard',
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -71,28 +78,31 @@ export default function AddFlashcardDialog({
   const modal = isOpen ? (
     <div
       style={{
-        position: "fixed",
+        position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(8px)",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
       }}
       onClick={closeDialog}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add flashcard"
+        tabIndex={-1}
         style={{
           margin: 16,
-          width: "100%",
+          width: '100%',
           maxWidth: 448,
           borderRadius: 16,
           padding: 24,
-          boxShadow: "0 25px 50px rgba(0,0,0,0.6)",
-          background: "rgba(8, 8, 20, 0.96)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          backdropFilter: "blur(30px)",
+
+          background: 'var(--surface)',
+          border: '1px solid rgba(255,255,255,0.12)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -100,17 +110,31 @@ export default function AddFlashcardDialog({
           <h2 className="text-lg font-semibold text-zinc-100">Add Flashcard</h2>
           <button
             onClick={closeDialog}
+            aria-label="Close dialog"
             className="rounded-lg p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="term" className="mb-1 block text-sm font-medium text-zinc-400">
+            <label
+              htmlFor="term"
+              className="mb-1 block text-sm font-medium text-zinc-400"
+            >
               Term
             </label>
             <input
@@ -124,7 +148,10 @@ export default function AddFlashcardDialog({
           </div>
 
           <div className="mb-4">
-            <label htmlFor="definition" className="mb-1 block text-sm font-medium text-zinc-400">
+            <label
+              htmlFor="definition"
+              className="mb-1 block text-sm font-medium text-zinc-400"
+            >
               Definition
             </label>
             <textarea
@@ -137,9 +164,7 @@ export default function AddFlashcardDialog({
             />
           </div>
 
-          {error && (
-            <p className="mb-4 text-sm text-red-400">{error}</p>
-          )}
+          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <button
@@ -152,9 +177,9 @@ export default function AddFlashcardDialog({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] disabled:opacity-50"
+              className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-medium text-white transition-all  disabled:opacity-50"
             >
-              {isSubmitting ? "Adding..." : "Add Card"}
+              {isSubmitting ? 'Adding...' : 'Add Card'}
             </button>
           </div>
         </form>
@@ -169,13 +194,23 @@ export default function AddFlashcardDialog({
         disabled={isDisabled}
         className="inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover hover-glow-blue disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <svg className="h-4 w-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        <svg
+          className="h-4 w-4 text-blue-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v16m8-8H4"
+          />
         </svg>
         <span className="text-zinc-300">Add Flashcard</span>
       </button>
 
-      {mounted && createPortal(modal, document.body)}
+      {isOpen && createPortal(modal, document.body)}
     </>
   );
 }

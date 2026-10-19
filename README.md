@@ -1,267 +1,103 @@
 # Mnemo
 
-Mnemo is a Next.js study app that turns uploaded documents into:
+A personal study workspace for PDF and PowerPoint documents (`.pptx`, `.ppt`, `.pps`, and `.ppsx`). Generate concept maps, flashcards, quizzes, topic summaries, guided workbench exercises, document chat, and voice practice.
 
-- flashcards
-- mixed quiz questions
-- concept graphs
-- workbench study activities
-- nursing-specific NCLEX practice or engineering-focused problem sets
+## Local setup
 
-## What You Need
+Use Node.js 22.13 or newer.
 
-Before you can run the app locally, you need:
-
-- a computer with Windows, macOS, or Linux
-- internet access for the initial setup
-- a Supabase project
-- a Groq API key
-
-## Fast Setup For Non-Technical Users
-
-If you do not have Git or Node installed yet, follow this version first.
-
-### 1. Install Node.js
-
-1. Go to [https://nodejs.org](https://nodejs.org)
-2. Download the current LTS version
-3. Run the installer
-4. Accept the default options
-
-After installation, open a new terminal and check that it worked:
-
-```bash
-node -v
-npm -v
+```sh
+npm ci
+cp .env.example .env.local
 ```
 
-You should see version numbers for both commands.
+Set these **server-only** values in `.env.local`:
 
-### 2. Install Git
-
-If you want the easiest way to download updates later, install Git too.
-
-On Windows:
-
-1. Go to [https://git-scm.com/download/win](https://git-scm.com/download/win)
-2. Download the installer
-3. Run it
-4. Keep the default options unless you already know you want something different
-
-On macOS:
-
-1. Go to [https://git-scm.com/download/mac](https://git-scm.com/download/mac)
-2. Install Git using the installer there, or install Xcode Command Line Tools if prompted by your Mac
-
-On Linux:
-
-Use your package manager. Examples:
-
-```bash
-sudo apt install git
-# or
-sudo dnf install git
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+DATABASE_URL=your_neon_postgres_connection_string
 ```
 
-After installation, open a new terminal and check that it worked:
+Optional model overrides are documented in [.env.example](.env.example). Text generation defaults to `gpt-6-luna`; transcription and narration use OpenAI audio models. One OpenAI key powers all AI features. No browser-side key or separate voice provider is required. Keep `.env.local` out of version control.
 
-```bash
-git --version
-```
+Once your Neon connection is available:
 
-### 3. Download the Project
-
-If you do not use Git:
-
-1. Open the project page in your browser
-2. Download the project as a `.zip`
-3. Extract it somewhere easy to find, such as your Desktop or Documents folder
-
-If Git is already installed, you can clone it instead:
-
-```bash
-git clone <repo-url>
-cd Mnemo
-```
-
-### 4. Open the Project Folder in a Terminal
-
-On Windows:
-
-1. Open the project folder in File Explorer
-2. Click the address bar
-3. Type `powershell`
-4. Press Enter
-
-On macOS:
-
-1. Open Terminal
-2. Type `cd `
-3. Drag the project folder into the Terminal window
-4. Press Enter
-
-### 5. Install the App Dependencies
-
-Run:
-
-```bash
-npm install
-```
-
-This may take a minute or two.
-
-### 6. Create Your Environment File
-
-Create a file named `.env` in the project root and add your keys:
-
-```env
-GROQ_API_KEY=your_groq_key_here
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_optional_but_recommended
-ELEVENLABS_API_KEY=your_elevenlabs_key_optional
-HUDSON_WILLIAMS=voice_id_optional
-MALE=voice_id_optional
-WOMAN=voice_id_optional
-```
-
-Notes:
-
-- `GROQ_API_KEY` is required for content generation
-- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are required
-- `SUPABASE_SERVICE_ROLE_KEY` is recommended for server-side admin operations
-- ElevenLabs keys are only needed if you want text-to-speech or speech-to-text features
-
-### 7. Run the Database Setup
-
-Open your Supabase project and run the SQL migrations in order:
-
-1. [001_initial_schema.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/001_initial_schema.sql)
-2. [002_add_features.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/002_add_features.sql)
-3. [003_add_concept_graph.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/003_add_concept_graph.sql)
-4. [004_add_document_content.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/004_add_document_content.sql)
-5. [005_add_chat_conversations.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/005_add_chat_conversations.sql)
-6. [006_add_workbench.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/006_add_workbench.sql)
-7. [007_add_study_modes_and_specialized_questions.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/007_add_study_modes_and_specialized_questions.sql)
-8. [008_add_workbench_glossary.sql](/c:/Users/thech/Downloads/Dev/Mnemo/supabase/migrations/008_add_workbench_glossary.sql)
-
-If you are not using the Supabase CLI, you can copy each file into the Supabase SQL Editor and run them one by one.
-
-### 8. Start the App
-
-Run:
-
-```bash
+```sh
+npm run db:migrate
 npm run dev
 ```
 
-Then open:
+The UI can run without secrets, and the production build does not require a database. Saving documents and generating material require both credentials. The library shows a connection error until the database is configured.
 
-```text
-http://localhost:3000
-```
+## Shared database isolation
 
-## Developer Setup
+Every persistent Mnemo object uses the literal `mnemo-` prefix, including tables, indexes, constraints, the migration ledger, and application-owned functions and triggers. Hyphens are quoted in SQL, for example `public."mnemo-documents"`.
 
-If you already have Git and Node installed:
+- The migration creates only Mnemo tables; it does not reset, rename, import, drop, or alter another application's objects.
+- No extension or database-wide configuration is changed.
+- Migrations use a transaction and advisory lock. The `mnemo-migrations` ledger makes reruns safe.
+- The runtime repository allowlists nine Mnemo tables and always qualifies them in `public`. Values are parameterized; unfiltered updates and deletes are rejected.
+- Deleting a Mnemo document cascades only to Mnemo study material belonging to it.
+- Uploads generate content before opening a short transaction. A failed save rolls back the document and all its materials.
 
-```bash
-git clone <repo-url>
-cd Mnemo
-npm install
-```
+Use a database role limited to the Mnemo tables for runtime access when sharing the database with other applications. The migration account needs permission to create the Mnemo objects in `public`. There is no automatic import from the previous database backend; existing data needs a separate, scoped export/import if required.
 
-Create `.env` with the required keys:
+The initial schema is [db/001_mnemo.sql](db/001_mnemo.sql); [db/002_powerpoint_formats.sql](db/002_powerpoint_formats.sql) extends Mnemo’s file-type constraint for older presentations and slideshows. The migration runner applies pending numbered SQL files in order. Review it before applying it to a shared production database. The migration command never runs automatically during build or startup.
 
-```env
-GROQ_API_KEY=
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-ELEVENLABS_API_KEY=
-HUDSON_WILLIAMS=
-MALE=
-WOMAN=
-```
+## Text model configuration
 
-Run the SQL migrations in `supabase/migrations`, then start the app:
+All text routes share `AI_TEXT_OPTIONS` from `src/lib/ai.ts`: document generation, concept maps, supplemental questions, workbench content and evaluation, chat, memory stories, and streaming voice conversation text. Luna uses `reasoning_effort: 'none'` to preserve fast non-reasoning generation and support the existing sampling settings. Output budgets use `max_completion_tokens`. JSON responses and streaming remain on the Chat Completions endpoint.
 
-```bash
-npm run dev
-```
+Speech synthesis and transcription retain their separate `OPENAI_TTS_MODEL` and `OPENAI_TRANSCRIBE_MODEL` settings. Changing the text model does not change those audio models. Restart the local server after changing `.env.local`; update `OPENAI_MODEL` in the Vercel environment and redeploy for hosted instances.
 
-## Useful Commands
+See the [GPT-6 Luna model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna) and [GPT-6 migration guidance](https://developers.openai.com/api/docs/guides/latest-model#migration-quickstart) for parameter compatibility.
 
-Start the development server:
+## Upload and generation behavior
 
-```bash
-npm run dev
-```
+Choose Engineering (calculation practice) or Nursing (clinical reasoning and NCLEX-style questions), then add a PDF or PowerPoint file (`.pptx`, `.ppt`, `.pps`, or `.ppsx`). The 4 MB upload limit leaves headroom under Vercel's request size limit. Image-only and password-protected documents are not supported. Legacy `.ppt` and `.pps` slideshows are parsed in an isolated worker with time and memory limits. If unsupported shape formatting prevents a full parse, a text-only fallback resolves the active slides and their speaker notes without interpreting graphics or styling; encrypted documents and invalid record boundaries still fail. modern `.pptx` and `.ppsx` use the OOXML parser. No local Office or LibreOffice installation is required. Very large extracted text is limited to 400,000 characters before generation; the upload response includes `was_truncated` when this happens. Generation may take several minutes; keep the page open. Starting an upload opens a full-screen animated concept network with live reading, generation, and saving stages streamed over NDJSON. Completed graph and practice material are reported independently. The screen opens the document dashboard immediately after saving succeeds, offers retry and library recovery on failure, and supports paused animations and reduced motion. The default JSON upload response remains available to other clients. Uploads are deduplicated by the prepared study text and study focus, independently of filename. Repeated uploads open the existing dashboard without generating again; simultaneous requests receive a conflict while the first generation is in progress. Atomic database leases prevent concurrent generation across server instances, and a unique index prevents duplicate saves. Leases are released on failure and expire after 15 minutes if a worker disappears. Migration 003 retains pre-existing duplicate documents and their study history, while showing the earliest copy in the library; direct links to the retained copies still work. Different study modes remain separate study sets. Migration 004 repairs JSON arrays that older versions stored as JSON strings, including retained duplicate documents, and adds array type constraints to graph, quiz, conversation, and workbench fields. It preserves record IDs, material, and study history. The upload route allows up to 300 seconds, subject to your hosting plan's limits.
 
-Create a production build:
+Concept maps group nodes by topic with deterministic, non-overlapping placement. Search, filter by topic, zoom, pan, inspect definitions and connections, or switch to a readable list. Cross-links are optional so dense graphs stay useful. Add 2–8 concepts to a memory story; OpenAI can narrate it using an AI-generated voice. The generator uses source-supported relationships rather than forced node or edge quotas. Model output is validated before saving.
 
-```bash
-npm run build
-```
+Generated workbench HTML is sanitized before rendering. AI-generated material can contain errors; verify it against your source, particularly clinical explanations and engineering calculations.
 
-Start the production server after building:
+## Vercel
 
-```bash
-npm run start
-```
+Import this Next.js project into Vercel, set `OPENAI_API_KEY` and the Neon pooled `DATABASE_URL` in the intended environment, and apply `npm run db:migrate` once with that connection locally or in a controlled release step. Do not expose either value with a `NEXT_PUBLIC_` prefix. Keep `sslmode=require` in the Neon connection string. The pool is capped at five connections per app instance and uses no prepared statements for compatibility with pooled connections.
 
-Run linting:
+This is a personal workspace: application-level sign-in and per-user document ownership are not implemented. Use Vercel deployment protection or equivalent private access before exposing a deployment with credentials. No external database has been provisioned by this cleanup.
 
-```bash
+## Checks and maintenance
+
+```sh
+npm run typecheck
 npm run lint
+npm test
+npm run build
+npm run format:check
 ```
 
-## Troubleshooting
+Tests use an isolated in-memory PostgreSQL engine. They check migration isolation with an unrelated sentinel table, parameterized CRUD, JSON storage, upserts, cascades, graph validation and collision-free deterministic placement, and HTML sanitization. They never connect to your database or call a paid API. Live model behavior and Neon connectivity still need verification after credentials are supplied.
 
-### `node` or `npm` is not recognized
+The production dependency audit (`npm audit --omit=dev`) is clean. The full development audit still reports an upstream `braces` advisory through the Next.js lint toolchain; its suggested forced fix downgrades the framework lint configuration, so it has not been applied.
 
-Node.js is not installed yet, or your terminal was open before installation finished.
+Run `npm run format` to apply the shared formatter. The core implementation is organized as follows:
 
-Try:
+- `src/lib/ai.ts`: lazy server-side OpenAI client and text model configuration.
+- `src/lib/database.ts`: parameterized, namespace-restricted PostgreSQL repository.
+- `src/lib/graph.ts`: graph validation and deterministic topic layout.
+- `src/lib/generate-content.ts`: study content generation and normalization.
+- `src/components/GraphClient.tsx`: interactive concept-map workspace.
+- `src/app/api`: document, study, chat, voice, and generation routes.
+- `src/app/globals.css`: shared UI tokens, responsive layouts, focus and motion rules.
 
-1. close the terminal
-2. reopen it
-3. run `node -v`
+## Workbench learning sessions
 
-If it still fails, reinstall Node.js from [https://nodejs.org](https://nodejs.org).
+The workbench uses a focused explanation and worked example, closed-note recall, new application scenarios, and reflection. Students commit an answer and confidence before seeing feedback. Explanations are evaluated for meaning against the saved reference; keyword overlap is never used to award correctness. Numeric and single-choice checks run locally on the server. Hints and reopened explanations are recorded as assisted practice. Missed or assisted questions return after intervening items, with at most two attempts per item per session.
 
-### `git` is not recognized
+Migration 005 adds only Mnemo-owned lesson fields and a session table. Checked answers, feedback, cursor, assistance, and review dates persist in PostgreSQL. Revision checks prevent an older tab from overwriting newer progress. A completed session is labeled as practice, not mastery. Topics with weak or assisted first attempts return after 10 minutes; strong independent sessions start at one day and double to a maximum of 30 days. These are simple scheduling defaults, not a validated personalized mastery model. The hub prioritizes unfinished work, then due reviews. Existing legacy progress is preserved without treating it as evidence of independent recall.
 
-Git is not installed yet, or your terminal was open before installation finished.
+New lessons include topic-relevant source excerpts rather than only the beginning of the document. Concurrent lesson requests on one server share generation; the existing unique lesson key prevents duplicate stored lessons across servers. The learning approach draws on the [IES practice guide on instruction and study](https://ies.ed.gov/ncee/wwc/PracticeGuide/1); the application’s particular scoring thresholds and intervals are product choices. AI feedback can still be wrong, so compare it with the explanation and uploaded source.
 
-Try:
+## Immersive concept map
 
-1. close the terminal
-2. reopen it
-3. run `git --version`
-
-If it still fails, install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads).
-
-You can still use the app by downloading the repository as a `.zip` instead of cloning it if you prefer.
-
-### The app starts but uploads fail
-
-Check that:
-
-- your `.env` file exists in the project root
-- your Groq key is valid
-- your Supabase URL and keys are correct
-- your Supabase SQL migrations were all run successfully
-
-### Workbench or quiz errors mention missing columns
-
-That usually means one or more Supabase migrations were not applied yet. Run the SQL files in `supabase/migrations` in order.
-
-## Tech Stack
-
-- Next.js 16
-- React 19
-- TypeScript
-- Supabase
-- Groq
-- ElevenLabs
+The map fills the viewport below navigation. Nodes form a stable constellation with varied spring distances and soft topic attraction; topic boxes are not drawn. A final rectangle collision pass keeps labels apart, including disconnected and cyclic graphs. Topic colors, search, list view, zoom controls, and a floating workbench link remain available. Selecting a concept opens a floating details panel and highlights its connections. Desktop opens an overview; narrow screens start closer to the central concept for readable exploration. Drag to pan, use the wheel or a two-finger pinch to zoom, or focus the canvas and use arrow keys, plus/minus, and 0 to recenter. Animation can be paused and respects reduced motion and tab visibility.

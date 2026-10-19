@@ -1,21 +1,21 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import CursorGlow from "@/components/CursorGlow";
+import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
+import './globals.css';
+import Navigation from '@/components/Navigation';
 
 const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+  variable: '--font-geist-sans',
+  subsets: ['latin'],
 });
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: '--font-geist-mono',
+  subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: "Mnemo",
-  description: "AI-powered study tools from your documents",
+  title: 'Mnemo',
+  description: 'AI-powered study tools from your documents',
 };
 
 export default function RootLayout({
@@ -28,10 +28,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
-        <div className="bg-mesh" />
-        <div className="bg-dots" />
-        <CursorGlow />
-        <div className="relative z-10">{children}</div>
+        <Navigation />
+        <div id="main-content" className="relative">
+          {children}
+        </div>
       </body>
     </html>
   );

@@ -1,20 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { groq } from "@/lib/groq";
-import { sanitizeGeneratedQuizQuestions } from "@/lib/generate-content";
+export const maxDuration = 300;
+import { NextRequest, NextResponse } from 'next/server';
+import { database } from '@/lib/database';
+import { ai, AI_TEXT_OPTIONS } from '@/lib/ai';
+import { sanitizeGeneratedQuizQuestions } from '@/lib/generate-content';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  { params }: { params: Promise<{ documentId: string }> },
 ) {
   try {
     const { documentId } = await params;
     const { existingQuestions, questionCount = 10 } = await request.json();
 
-    const { data: existingQs, error: countError } = await supabase
-      .from("quiz_questions")
-      .select("id", { count: "exact" })
-      .eq("document_id", documentId);
+    const { data: existingQs, error: countError } = await database
+      .from('quiz_questions')
+      .select('id', { count: 'exact' })
+      .eq('document_id', documentId);
 
     if (countError) throw countError;
 
@@ -23,29 +24,36 @@ export async function POST(
 
     if (currentCount >= hardLimit) {
       return NextResponse.json(
-        { error: `Question limit reached (${hardLimit} max)`, limitReached: true, questions: [] },
-        { status: 400 }
+        {
+          error: `Question limit reached (${hardLimit} max)`,
+          limitReached: true,
+          questions: [],
+        },
+        { status: 400 },
       );
     }
 
-    const { data: doc } = await supabase
-      .from("documents")
-      .select("content, filename, study_mode")
-      .eq("id", documentId)
+    const { data: doc } = await database
+      .from('documents')
+      .select('content, filename, study_mode')
+      .eq('id', documentId)
       .maybeSingle();
 
     if (!doc) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 },
+      );
     }
 
-    const docContext = doc.content ? doc.content.slice(0, 8000) : "";
-    const studyMode = doc.study_mode ?? "engineers";
+    const docContext = doc.content ? doc.content.slice(0, 8000) : '';
+    const studyMode = doc.study_mode ?? 'engineers';
     const alreadyAsked = (existingQuestions as string[])
       .map((question, index) => `${index + 1}. ${question}`)
-      .join("\n");
+      .join('\n');
 
     const specializedRules =
-      studyMode === "nursing"
+      studyMode === 'nursing'
         ? `- Include some "nclex" questions when they fit the material. NCLEX questions must be single-best-answer with 4 choices and a clinical rationale.
 - For non-NCLEX questions, set numeric_answer to null, answer_tolerance to null, and answer_unit to "".
 - For NCLEX questions, set correct_answer_text to "".
@@ -54,11 +62,11 @@ export async function POST(
 - For non-engineering questions, set numeric_answer to null, answer_tolerance to null, and answer_unit to "".
 - For engineering questions, set choices to [] and correct_answer_text to "".`;
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const response = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: [
         {
-          role: "system",
+          role: 'system',
           content: `You are an expert educator generating additional quiz questions for a student who has already completed a quiz round.
 
 You MUST respond with valid JSON in exactly this format:
@@ -97,7 +105,7 @@ Rules:
 - Respond ONLY with the JSON object.`,
         },
         {
-          role: "user",
+          role: 'user',
           content: `Document: "${doc.filename}"
 
 Content:
@@ -109,13 +117,13 @@ ${alreadyAsked}
 Generate ${questionCount} new distinct questions from different angles of the material.`,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.8,
-      max_tokens: 6000,
+      max_completion_tokens: 6000,
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error("No content from Groq API");
+    if (!content) throw new Error('No content from OpenAI API');
 
     const parsed = JSON.parse(content);
 
@@ -124,7 +132,7 @@ Generate ${questionCount} new distinct questions from different angles of the ma
     }
 
     const sanitizedQuestions = sanitizeGeneratedQuizQuestions(
-      Array.isArray(parsed.questions) ? parsed.questions : []
+      Array.isArray(parsed.questions) ? parsed.questions : [],
     );
 
     const rows = sanitizedQuestions.map((question) => ({
@@ -133,12 +141,13 @@ Generate ${questionCount} new distinct questions from different angles of the ma
       question_type: question.question_type,
       choices: question.choices ?? [],
       correct_answer: question.correct_answer ?? 0,
-      correct_answers: question.correct_answers.length > 0 ? question.correct_answers : null,
-      correct_answer_text: question.correct_answer_text ?? "",
+      correct_answers:
+        question.correct_answers.length > 0 ? question.correct_answers : null,
+      correct_answer_text: question.correct_answer_text ?? '',
       numeric_answer: question.numeric_answer ?? null,
       answer_tolerance: question.answer_tolerance ?? null,
       answer_unit: question.answer_unit ?? null,
-      explanation: question.explanation ?? "",
+      explanation: question.explanation ?? '',
     }));
 
     const allowedToInsert = Math.max(0, hardLimit - currentCount);
@@ -146,16 +155,20 @@ Generate ${questionCount} new distinct questions from different angles of the ma
 
     if (rowsToInsert.length === 0) {
       return NextResponse.json(
-        { error: `Question limit reached (${hardLimit} max)`, limitReached: true, questions: [] },
-        { status: 400 }
+        {
+          error: `Question limit reached (${hardLimit} max)`,
+          limitReached: true,
+          questions: [],
+        },
+        { status: 400 },
       );
     }
 
-    const { data: inserted, error: insertError } = await supabase
-      .from("quiz_questions")
+    const { data: inserted, error: insertError } = await database
+      .from('quiz_questions')
       .insert(rowsToInsert)
       .select(
-        "id, document_id, question, question_type, choices, correct_answer, correct_answers, correct_answer_text, numeric_answer, answer_tolerance, answer_unit, explanation"
+        'id, document_id, question, question_type, choices, correct_answer, correct_answers, correct_answer_text, numeric_answer, answer_tolerance, answer_unit, explanation',
       );
 
     if (insertError) throw insertError;
@@ -166,10 +179,15 @@ Generate ${questionCount} new distinct questions from different angles of the ma
       questions: inserted ?? [],
     });
   } catch (error) {
-    console.error("Quiz more questions error:", error);
+    console.error('Quiz more questions error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate questions" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate questions',
+      },
+      { status: 500 },
     );
   }
 }

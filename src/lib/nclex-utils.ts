@@ -1,4 +1,4 @@
-const CHOICE_LABELS = ["A", "B", "C", "D"] as const;
+const CHOICE_LABELS = ['A', 'B', 'C', 'D'] as const;
 
 type SingleAnswerWithLabeledRationale = {
   choices: string[];
@@ -10,35 +10,35 @@ type SingleAnswerWithLabeledRationale = {
 function normalizeForSearch(text: string) {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 function getSignificantTokens(text: string) {
   const stopWords = new Set([
-    "a",
-    "an",
-    "and",
-    "as",
-    "at",
-    "by",
-    "for",
-    "from",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "to",
-    "with",
+    'a',
+    'an',
+    'and',
+    'as',
+    'at',
+    'by',
+    'for',
+    'from',
+    'in',
+    'is',
+    'it',
+    'of',
+    'on',
+    'or',
+    'that',
+    'the',
+    'to',
+    'with',
   ]);
 
   return normalizeForSearch(text)
-    .split(" ")
+    .split(' ')
     .filter((token) => token.length > 2 && !stopWords.has(token));
 }
 
@@ -56,10 +56,12 @@ function shuffleIndices(length: number) {
 function remapLabeledRationale(
   text: string,
   oldCorrectIndex: number,
-  newOrder: number[]
+  newOrder: number[],
 ) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  const bestMatch = normalized.match(/Best answer:\s*(.*?)(?=\s*Wrong options:|\s*Rule:|$)/i);
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const bestMatch = normalized.match(
+    /Best answer:\s*(.*?)(?=\s*Wrong options:|\s*Rule:|$)/i,
+  );
   const wrongMatch = normalized.match(/Wrong options:\s*(.*?)(?=\s*Rule:|$)/i);
   const ruleMatch = normalized.match(/Rule:\s*(.*)$/i);
 
@@ -74,7 +76,9 @@ function remapLabeledRationale(
     .forEach((entry) => {
       const match = entry.match(/^([A-D])\)\s*(.*)$/);
       if (!match) return;
-      const oldIndex = CHOICE_LABELS.indexOf(match[1] as (typeof CHOICE_LABELS)[number]);
+      const oldIndex = CHOICE_LABELS.indexOf(
+        match[1] as (typeof CHOICE_LABELS)[number],
+      );
       if (oldIndex >= 0) {
         wrongOptionMap.set(oldIndex, match[2].trim());
       }
@@ -88,28 +92,28 @@ function remapLabeledRationale(
       return explanation ? `${CHOICE_LABELS[newIndex]}) ${explanation}` : null;
     })
     .filter((entry): entry is string => !!entry)
-    .join(" ");
+    .join(' ');
 
   if (!rebuiltWrongOptions) {
     return text;
   }
 
-  const segments = [`Best answer: ${bestMatch?.[1]?.trim() || ""}`.trim()];
+  const segments = [`Best answer: ${bestMatch?.[1]?.trim() || ''}`.trim()];
   segments.push(`Wrong options: ${rebuiltWrongOptions}`);
 
   if (ruleMatch?.[1]?.trim()) {
     segments.push(`Rule: ${ruleMatch[1].trim()}`);
   }
 
-  return segments.join(" ").trim();
+  return segments.join(' ').trim();
 }
 
 export function questionLeaksCorrectAnswer(
   stem: string,
   correctChoice: string,
-  scenario?: string
+  scenario?: string,
 ) {
-  const combinedStem = normalizeForSearch(`${scenario ?? ""} ${stem}`);
+  const combinedStem = normalizeForSearch(`${scenario ?? ''} ${stem}`);
   const normalizedChoice = normalizeForSearch(correctChoice);
 
   if (normalizedChoice.length >= 6 && combinedStem.includes(normalizedChoice)) {
@@ -117,13 +121,14 @@ export function questionLeaksCorrectAnswer(
   }
 
   const tokens = getSignificantTokens(correctChoice);
-  return tokens.length >= 2 && tokens.every((token) => combinedStem.includes(token));
+  return (
+    tokens.length >= 2 && tokens.every((token) => combinedStem.includes(token))
+  );
 }
 
-export function shuffleSingleAnswerChoices<T extends SingleAnswerWithLabeledRationale>(
-  question: T,
-  rationaleField?: "explanation" | "rationale"
-) {
+export function shuffleSingleAnswerChoices<
+  T extends SingleAnswerWithLabeledRationale,
+>(question: T, rationaleField?: 'explanation' | 'rationale') {
   if (!Array.isArray(question.choices) || question.choices.length !== 4) {
     return question;
   }
@@ -135,20 +140,24 @@ export function shuffleSingleAnswerChoices<T extends SingleAnswerWithLabeledRati
     correct_answer: newOrder.indexOf(question.correct_answer),
   };
 
-  if (rationaleField && typeof question[rationaleField] === "string" && question[rationaleField]?.trim()) {
+  if (
+    rationaleField &&
+    typeof question[rationaleField] === 'string' &&
+    question[rationaleField]?.trim()
+  ) {
     remappedQuestion[rationaleField] = remapLabeledRationale(
       question[rationaleField] as string,
       question.correct_answer,
-      newOrder
+      newOrder,
     ) as T[typeof rationaleField];
   }
 
   return remappedQuestion;
 }
 
-export function shuffleMultipleSelectChoices<T extends { choices: string[]; correct_answers: number[] }>(
-  question: T
-) {
+export function shuffleMultipleSelectChoices<
+  T extends { choices: string[]; correct_answers: number[] },
+>(question: T) {
   if (!Array.isArray(question.choices) || question.choices.length !== 4) {
     return question;
   }

@@ -1,31 +1,43 @@
 {
-  "name": "flashcards-app",
+  "name": "mnemo",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "node scripts/migrate.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
+    "format": "prettier --write src scripts tests README.md package.json next.config.ts .prettierrc.json",
+    "format:check": "prettier --check src scripts tests README.md package.json next.config.ts .prettierrc.json"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^2.0.4",
-    "@supabase/supabase-js": "^2.97.0",
-    "next": "16.1.6",
-    "officeparser": "^6.0.4",
+    "archive-codec": "^1.11.26",
+    "next": "^16.4.2",
+    "officeparser": "^8.1.1",
     "openai": "^6.22.0",
     "pdf-parse": "^2.4.5",
+    "postgres": "^3.4.7",
+    "ppt-codec": "^2.2.23",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "sanitize-html": "^2.17.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "^16.4.2",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4",
+    "tsx": "^4.20.0",
     "typescript": "^5"
   }
 }

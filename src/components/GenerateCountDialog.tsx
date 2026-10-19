@@ -1,10 +1,11 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalFocus } from '@/lib/use-modal-focus';
 
 interface GenerateCountDialogProps {
-  accent: "blue" | "emerald";
+  accent: 'blue' | 'emerald';
   buttonLabel: string;
   confirmLabel: string;
   countLabel: string;
@@ -17,22 +18,22 @@ interface GenerateCountDialogProps {
 
 const accentStyles = {
   blue: {
-    buttonGlow: "hover-glow-blue",
-    buttonIcon: "text-blue-400",
-    confirmButton: "from-blue-500 to-indigo-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)]",
-    panelBorder: "border-blue-500/20",
-    panelBg: "bg-blue-500/10",
-    titleText: "text-blue-300",
-    focusBorder: "focus:border-blue-500/40",
+    buttonGlow: 'hover-glow-blue',
+    buttonIcon: 'text-blue-400',
+    confirmButton: 'from-blue-500 to-indigo-500 ',
+    panelBorder: 'border-blue-500/20',
+    panelBg: 'bg-blue-500/10',
+    titleText: 'text-blue-300',
+    focusBorder: 'focus:border-blue-500/40',
   },
   emerald: {
-    buttonGlow: "hover-glow-emerald",
-    buttonIcon: "text-emerald-400",
-    confirmButton: "from-emerald-500 to-green-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]",
-    panelBorder: "border-emerald-500/20",
-    panelBg: "bg-emerald-500/10",
-    titleText: "text-emerald-300",
-    focusBorder: "focus:border-emerald-500/40",
+    buttonGlow: 'hover-glow-emerald',
+    buttonIcon: 'text-emerald-400',
+    confirmButton: 'from-emerald-500 to-green-500 ',
+    panelBorder: 'border-emerald-500/20',
+    panelBg: 'bg-emerald-500/10',
+    titleText: 'text-emerald-300',
+    focusBorder: 'focus:border-emerald-500/40',
   },
 } as const;
 
@@ -50,24 +51,16 @@ export default function GenerateCountDialog({
   const [isOpen, setIsOpen] = useState(false);
   const [count, setCount] = useState(Math.min(5, maxCount || 1));
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (maxCount > 0) {
-      setCount((current) => Math.max(1, Math.min(current, maxCount)));
-    }
-  }, [maxCount]);
+  const [error, setError] = useState('');
+  const panelRef = useModalFocus(isOpen, () => {
+    if (!isSubmitting) setIsOpen(false);
+  });
 
   const styles = accentStyles[accent];
 
   const openDialog = () => {
     if (isDisabled || maxCount <= 0) return;
-    setError("");
+    setError('');
     setCount(Math.max(1, Math.min(5, maxCount)));
     setIsOpen(true);
   };
@@ -80,13 +73,13 @@ export default function GenerateCountDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError("");
+    setError('');
 
     try {
       await onGenerate(Math.max(1, Math.min(count, maxCount)));
       setIsOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
       setIsSubmitting(false);
     }
@@ -95,50 +88,70 @@ export default function GenerateCountDialog({
   const modal = isOpen ? (
     <div
       style={{
-        position: "fixed",
+        position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(8px)",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
       }}
       onClick={closeDialog}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Generate study material"
+        tabIndex={-1}
         style={{
           margin: 16,
-          width: "100%",
+          width: '100%',
           maxWidth: 448,
           borderRadius: 16,
           padding: 24,
-          boxShadow: "0 25px 50px rgba(0,0,0,0.6)",
-          background: "rgba(8, 8, 20, 0.96)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          backdropFilter: "blur(30px)",
+
+          background: 'var(--surface)',
+          border: '1px solid rgba(255,255,255,0.12)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Generate More</p>
-            <h2 className="mt-2 text-xl font-semibold text-zinc-100">{heading}</h2>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-100">
+              {heading}
+            </h2>
             <p className="mt-2 text-sm text-zinc-400">{description}</p>
           </div>
           <button
             onClick={closeDialog}
+            aria-label="Close dialog"
             className="rounded-lg p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className={`mb-4 rounded-2xl border px-4 py-4 ${styles.panelBorder} ${styles.panelBg}`}>
-            <label htmlFor={`${accent}-generate-count`} className="block text-sm font-medium text-zinc-200">
+          <div
+            className={`mb-4 rounded-2xl border px-4 py-4 ${styles.panelBorder} ${styles.panelBg}`}
+          >
+            <label
+              htmlFor={`${accent}-generate-count`}
+              className="block text-sm font-medium text-zinc-200"
+            >
               {countLabel}
             </label>
             <div className="mt-3 flex items-center gap-3">
@@ -148,7 +161,14 @@ export default function GenerateCountDialog({
                 min={1}
                 max={maxCount}
                 value={count}
-                onChange={(e) => setCount(Math.max(1, Math.min(Number(e.target.value) || 1, maxCount)))}
+                onChange={(e) =>
+                  setCount(
+                    Math.max(
+                      1,
+                      Math.min(Number(e.target.value) || 1, maxCount),
+                    ),
+                  )
+                }
                 disabled={isSubmitting}
                 className={`w-28 rounded-xl glass px-3 py-2 text-sm text-zinc-100 outline-none transition-all disabled:opacity-50 ${styles.focusBorder}`}
               />
@@ -173,7 +193,7 @@ export default function GenerateCountDialog({
               disabled={isSubmitting}
               className={`rounded-xl bg-gradient-to-r px-4 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 ${styles.confirmButton}`}
             >
-              {isSubmitting ? "Generating..." : confirmLabel}
+              {isSubmitting ? 'Generating...' : confirmLabel}
             </button>
           </div>
         </form>
@@ -188,13 +208,23 @@ export default function GenerateCountDialog({
         disabled={isDisabled || maxCount === 0}
         className={`inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover disabled:cursor-not-allowed disabled:opacity-50 ${styles.buttonGlow}`}
       >
-        <svg className={`h-4 w-4 ${styles.buttonIcon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        <svg
+          className={`h-4 w-4 ${styles.buttonIcon}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v16m8-8H4"
+          />
         </svg>
         <span className="text-zinc-300">{buttonLabel}</span>
       </button>
 
-      {mounted && createPortal(modal, document.body)}
+      {isOpen && createPortal(modal, document.body)}
     </>
   );
 }

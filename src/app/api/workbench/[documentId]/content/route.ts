@@ -1,14 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { groq } from "@/lib/groq";
+export const maxDuration = 300;
+import { NextRequest, NextResponse } from 'next/server';
+import { database } from '@/lib/database';
+import { ai, AI_TEXT_OPTIONS } from '@/lib/ai';
 import {
   compileNclexReferencePacket,
   getNclexExplanationFormatInstructions,
   getNclexQualityChecklist,
   getNclexStemStyleInstructions,
-} from "@/lib/nclex-guidance";
-import { questionLeaksCorrectAnswer, shuffleSingleAnswerChoices } from "@/lib/nclex-utils";
-import type { ConceptNode, NclexQuestion, StudyMode } from "@/types";
+} from '@/lib/nclex-guidance';
+import {
+  questionLeaksCorrectAnswer,
+  shuffleSingleAnswerChoices,
+} from '@/lib/nclex-utils';
+import type { NclexQuestion, StudyMode } from '@/types';
+import {
+  validGroup,
+  workbenchGroups,
+  topicContext,
+} from '@/lib/workbench-learning';
 
 function compactGuidance(text: string, maxChars = 2200) {
   return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
@@ -17,11 +26,11 @@ function compactGuidance(text: string, maxChars = 2200) {
 function looksLikeBinaryOppositeOptions(choices: string[]) {
   const normalized = choices.map((choice) => choice.trim().toLowerCase());
   const oppositePatterns = [
-    ["increase", "decrease"],
-    ["higher", "lower"],
-    ["more", "less"],
-    ["raise", "lower"],
-    ["up", "down"],
+    ['increase', 'decrease'],
+    ['higher', 'lower'],
+    ['more', 'less'],
+    ['raise', 'lower'],
+    ['up', 'down'],
   ];
 
   return oppositePatterns.some(([a, b]) => {
@@ -34,33 +43,36 @@ function looksLikeBinaryOppositeOptions(choices: string[]) {
 function hasClinicalContext(text: string) {
   const normalized = text.toLowerCase();
   return [
-    "client",
-    "patient",
-    "nurse",
-    "assessment",
-    "findings",
-    "reports",
-    "vital signs",
-    "admitted",
-    "postoperative",
-    "provider",
-    "history",
-    "symptom",
-    "priority",
-    "delegat",
+    'client',
+    'patient',
+    'nurse',
+    'assessment',
+    'findings',
+    'reports',
+    'vital signs',
+    'admitted',
+    'postoperative',
+    'provider',
+    'history',
+    'symptom',
+    'priority',
+    'delegat',
   ].some((marker) => normalized.includes(marker));
 }
 
 function isValidNclexQuestion(question: NclexQuestion) {
   return (
-    typeof question.scenario === "string" &&
-    typeof question.question === "string" &&
+    typeof question.scenario === 'string' &&
+    typeof question.question === 'string' &&
     Array.isArray(question.choices) &&
     question.choices.length === 4 &&
-    typeof question.correct_answer === "number" &&
+    Number.isInteger(question.correct_answer) &&
+    question.choices.every(
+      (choice) => typeof choice === 'string' && !!choice.trim(),
+    ) &&
     question.correct_answer >= 0 &&
     question.correct_answer <= 3 &&
-    typeof question.rationale === "string"
+    typeof question.rationale === 'string'
   );
 }
 
@@ -69,13 +81,18 @@ function isStrongNclexQuestion(question: NclexQuestion) {
     isValidNclexQuestion(question) &&
     hasClinicalContext(`${question.scenario} ${question.question}`) &&
     !looksLikeBinaryOppositeOptions(question.choices) &&
-    !questionLeaksCorrectAnswer(question.question, question.choices[question.correct_answer] || "", question.scenario) &&
-    new Set(question.choices.map((choice) => choice.trim().toLowerCase())).size === 4
+    !questionLeaksCorrectAnswer(
+      question.question,
+      question.choices[question.correct_answer] || '',
+      question.scenario,
+    ) &&
+    new Set(question.choices.map((choice) => choice.trim().toLowerCase()))
+      .size === 4
   );
 }
 
 function randomizeNclexQuestion(question: NclexQuestion) {
-  return shuffleSingleAnswerChoices(question, "rationale");
+  return shuffleSingleAnswerChoices(question, 'rationale');
 }
 
 async function generateSupplementalNclexQuestions(
@@ -84,16 +101,18 @@ async function generateSupplementalNclexQuestions(
   docContext: string,
   missingCount: number,
   existingQuestions: NclexQuestion[],
-  nursingPacketText: string
+  nursingPacketText: string,
 ): Promise<NclexQuestion[]> {
-  const avoidList = existingQuestions.map((q, index) => `${index + 1}. ${q.question}`).join("\n");
+  const avoidList = existingQuestions
+    .map((q, index) => `${index + 1}. ${q.question}`)
+    .join('\n');
 
   try {
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const response = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: [
         {
-          role: "system",
+          role: 'system',
           content: `You create only NCLEX-style questions and return valid JSON.
 
 Return exactly this format:
@@ -121,26 +140,26 @@ Rules:
 - Spread correct answers across A, B, C, and D instead of clustering them
 - Stem-style guidance:
 ${getNclexStemStyleInstructions()}
-- ${getNclexExplanationFormatInstructions().replace("explanation", "rationale")}
+- ${getNclexExplanationFormatInstructions().replace('explanation', 'rationale')}
 - Follow this curated guidance:
 ${compactGuidance(nursingPacketText)}
 - Do not repeat or closely paraphrase any existing questions
 - Respond only with JSON`,
         },
         {
-          role: "user",
+          role: 'user',
           content: `Concept group: "${groupName}"
 
 Concepts:
 ${conceptList}
 
-${docContext ? `Document context:\n${docContext.slice(0, 5000)}\n\n` : ""}Existing questions to avoid:
-${avoidList || "None"}`,
+${docContext ? `Document context:\n${docContext.slice(0, 5000)}\n\n` : ''}Existing questions to avoid:
+${avoidList || 'None'}`,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.7,
-      max_tokens: 3000,
+      max_completion_tokens: 3000,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -153,7 +172,7 @@ ${avoidList || "None"}`,
       .filter(isStrongNclexQuestion)
       .map(randomizeNclexQuestion);
   } catch (error) {
-    console.error("Workbench supplemental NCLEX generation failed:", error);
+    console.error('Workbench supplemental NCLEX generation failed:', error);
     return [];
   }
 }
@@ -163,18 +182,18 @@ async function refineNclexQuestions(
   groupName: string,
   conceptList: string,
   docContext: string,
-  nursingPacketText: string
+  nursingPacketText: string,
 ): Promise<NclexQuestion[]> {
   if (questions.length === 0) {
     return [];
   }
 
   try {
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const response = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: [
         {
-          role: "system",
+          role: 'system',
           content: `You are an NCLEX-RN item editor. Rewrite these NCLEX questions to improve quality while staying aligned to the concept group and uploaded document.
 
 Return JSON:
@@ -210,19 +229,19 @@ ${getNclexStemStyleInstructions()}
  - Return only revised questions in JSON.`,
         },
         {
-          role: "user",
+          role: 'user',
           content: `Concept group: "${groupName}"
 
 Concepts:
 ${conceptList}
 
-${docContext ? `Document context:\n${docContext.slice(0, 4000)}\n\n` : ""}Improve these NCLEX questions:
+${docContext ? `Document context:\n${docContext.slice(0, 4000)}\n\n` : ''}Improve these NCLEX questions:
 ${JSON.stringify(questions)}`,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.4,
-      max_tokens: 4500,
+      max_completion_tokens: 4500,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -231,75 +250,94 @@ ${JSON.stringify(questions)}`,
     }
 
     const parsed = JSON.parse(content) as { questions?: NclexQuestion[] };
-    const refined = Array.isArray(parsed.questions) ? parsed.questions : questions;
+    const refined = Array.isArray(parsed.questions)
+      ? parsed.questions
+      : questions;
     return refined.filter(isStrongNclexQuestion).map(randomizeNclexQuestion);
   } catch (error) {
-    console.error("Workbench NCLEX refinement failed, falling back:", error);
+    console.error('Workbench NCLEX refinement failed, falling back:', error);
     return questions;
   }
 }
 
 // GET — fetch or generate workbench content for a group
-export async function GET(
+async function prepareLesson(
   request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  { params }: { params: Promise<{ documentId: string }> },
 ) {
   try {
     const { documentId } = await params;
-    const groupName = request.nextUrl.searchParams.get("group");
+    const groupName = request.nextUrl.searchParams.get('group');
 
-    if (!groupName) {
-      return NextResponse.json({ error: "group query param required" }, { status: 400 });
+    if (!validGroup(groupName)) {
+      return NextResponse.json(
+        { error: 'group query param required' },
+        { status: 400 },
+      );
     }
 
-    const { data: doc } = await supabase
-      .from("documents")
-      .select("content, filename, study_mode")
-      .eq("id", documentId)
+    const { data: doc } = await database
+      .from('documents')
+      .select('content, filename, study_mode')
+      .eq('id', documentId)
       .maybeSingle();
 
-    const studyMode = (doc?.study_mode ?? "engineers") as StudyMode;
+    if (!doc)
+      return NextResponse.json(
+        { error: 'Document not found.' },
+        { status: 404 },
+      );
+    const studyMode = (doc?.study_mode ?? 'engineers') as StudyMode;
 
-    const { data: existing } = await supabase
-      .from("workbench_content")
-      .select("*")
-      .eq("document_id", documentId)
-      .eq("group_name", groupName)
+    const { data: existing } = await database
+      .from('workbench_content')
+      .select('*')
+      .eq('document_id', documentId)
+      .eq('group_name', groupName)
       .maybeSingle();
 
     if (existing) {
       return NextResponse.json({ ...existing, study_mode: studyMode });
     }
 
-    const { data: graph } = await supabase
-      .from("concept_graphs")
-      .select("nodes")
-      .eq("document_id", documentId)
+    const { data: graph } = await database
+      .from('concept_graphs')
+      .select('nodes')
+      .eq('document_id', documentId)
       .maybeSingle();
 
     if (!graph) {
-      return NextResponse.json({ error: "Concept graph not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Concept graph not found' },
+        { status: 404 },
+      );
     }
 
-    const allNodes = graph.nodes as ConceptNode[];
-    const groupNodes = allNodes.filter((n) => n.group === groupName && n.id !== "central");
+    const { groups } = workbenchGroups({ nodes: graph.nodes, edges: [] });
+    const groupNodes = groups.get(groupName) ?? [];
 
     if (groupNodes.length === 0) {
-      return NextResponse.json({ error: "No nodes found in this group" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'No nodes found in this group' },
+        { status: 404 },
+      );
     }
 
-    const docContext = doc?.content ? doc.content.slice(0, 8000) : "";
+    const docContext = doc?.content
+      ? topicContext(doc.content, groupNodes)
+      : '';
     const conceptList = groupNodes
       .map((n) => `- "${n.label}": ${n.definition}`)
-      .join("\n");
-    const nursingPacket = studyMode === "nursing" ? compileNclexReferencePacket(docContext) : null;
-    const nursingPacketText = nursingPacket?.packetText ?? "";
+      .join('\n');
+    const nursingPacket =
+      studyMode === 'nursing' ? compileNclexReferencePacket(docContext) : null;
+    const nursingPacketText = nursingPacket?.packetText ?? '';
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const response = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: [
         {
-          role: "system",
+          role: 'system',
           content: `You are an expert educator creating deep-study content for a group of related concepts. Generate content that teaches these concepts together, emphasizing how they connect.
 
 You MUST respond with valid JSON in exactly this format:
@@ -316,6 +354,9 @@ You MUST respond with valid JSON in exactly this format:
       "keyTerms": ["term1", "term2", "term3"],
       "briefSection": "Title of the <h3> section containing the answer"
     }
+  ],
+  "application_questions": [
+    { "question": "A new source-grounded scenario requiring prediction, comparison, or explaining a failure.", "idealAnswer": "Reasoning and expected conclusion.", "hints": ["One directional hint"], "keyTerms": [], "briefSection": "" }
   ],
   "faded_blanks": [
     {
@@ -351,7 +392,12 @@ Rules:
 - BRIEF FORMAT: Structure the brief as 3-5 short sections with <h3> headings and concise paragraphs.
 - LANGUAGE STYLE: Write clearly and accessibly.
 - Every inquiry question must be answerable from the brief.
-- Generate 4 inquiry questions and 6 faded blanks.
+- Generate 4 inquiry questions, 2 application_questions, and 3 faded blanks.
+- Keep the brief to 300-500 words: the core idea, a concrete worked example with reasoning, and a common misconception. Include how these concepts connect. Avoid repeated definitions.
+- Inquiry questions test explanation and causal reasoning, not copying a sentence. Do not bold or reveal the answer inside a question.
+- Application questions must use a new situation, compare related concepts, or predict what fails when assumptions change. Include the essential reasoning in idealAnswer. Never require unsupported outside knowledge.
+- Hints should guide reasoning without giving away the answer.
+- Include all facts needed for practice in the brief. Keep examples and explanations aligned to the uploaded source.
 - engineering_problems: If study mode is "engineers", generate 2-3 quantitative problems when concepts are quantitative. Otherwise set to [].
 - nclex_questions: If study mode is "nursing", generate at least 5 NCLEX-style questions. Otherwise set to [].
   - Use client-centered nursing language
@@ -370,23 +416,23 @@ ${nursingPacketText}
 - Respond ONLY with the JSON object.`,
         },
         {
-          role: "user",
+          role: 'user',
           content: `Generate group study content for the "${groupName}" concept group in ${studyMode} mode.
 
 Concepts in this group:
 ${conceptList}
 
-${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""}`,
+${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ''}`,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.7,
-      max_tokens: 5000,
+      max_completion_tokens: 5000,
     });
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      throw new Error("No content from Groq API");
+      throw new Error('No content from OpenAI API');
     }
 
     const parsed = JSON.parse(content) as {
@@ -399,7 +445,12 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
         keyTerms?: string[];
         briefSection?: string;
       }[];
-      faded_blanks?: { textBefore: string; answer: string; textAfter: string }[];
+      application_questions?: import('@/types').InquiryQuestion[];
+      faded_blanks?: {
+        textBefore: string;
+        answer: string;
+        textAfter: string;
+      }[];
       engineering_problems?: {
         problem: string;
         givenData: string[];
@@ -412,42 +463,126 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
       requiredConcepts?: string[];
     };
 
+    if (
+      !parsed.brief?.trim() ||
+      !Array.isArray(parsed.inquiry_questions) ||
+      parsed.inquiry_questions.length < 2 ||
+      parsed.inquiry_questions.some(
+        (q) =>
+          !q ||
+          typeof q.question !== 'string' ||
+          typeof q.idealAnswer !== 'string' ||
+          !q.idealAnswer.trim(),
+      ) ||
+      !Array.isArray(parsed.application_questions) ||
+      parsed.application_questions.length < 2 ||
+      parsed.application_questions.some(
+        (q) =>
+          !q ||
+          typeof q.question !== 'string' ||
+          typeof q.idealAnswer !== 'string' ||
+          !q.idealAnswer.trim(),
+      )
+    )
+      throw new Error(
+        'The lesson did not contain usable practice. Please retry.',
+      );
     const inquiryQuestions = (parsed.inquiry_questions || []).map((q) => ({
       ...q,
-      keyTerms: q.keyTerms ?? [],
-      briefSection: q.briefSection ?? "",
+      hints: Array.isArray(q.hints)
+        ? q.hints.filter((h) => typeof h === 'string')
+        : [],
+      keyTerms: Array.isArray(q.keyTerms)
+        ? q.keyTerms.filter((t) => typeof t === 'string')
+        : [],
+      briefSection: q.briefSection ?? '',
     }));
 
-    const labelToId = new Map(groupNodes.map((n) => [n.label.toLowerCase(), n.id]));
-    const requiredNodeIds = (parsed.requiredConcepts ?? [])
+    const applicationQuestions = parsed
+      .application_questions!.slice(0, 2)
+      .map((q) => ({
+        ...q,
+        hints: Array.isArray(q.hints)
+          ? q.hints.filter((h) => typeof h === 'string')
+          : [],
+        keyTerms: [],
+        briefSection: typeof q.briefSection === 'string' ? q.briefSection : '',
+      }));
+    const engineeringProblems = (
+      Array.isArray(parsed.engineering_problems)
+        ? parsed.engineering_problems
+        : []
+    ).filter(
+      (p) =>
+        p &&
+        typeof p.problem === 'string' &&
+        Number.isFinite(p.answer) &&
+        Number.isFinite(p.tolerance) &&
+        p.tolerance >= 0 &&
+        typeof p.unit === 'string' &&
+        Array.isArray(p.givenData) &&
+        p.givenData.every((v) => typeof v === 'string') &&
+        Array.isArray(p.solutionSteps) &&
+        p.solutionSteps.every((v) => typeof v === 'string'),
+    );
+    const glossary = (
+      Array.isArray(parsed.glossary) ? parsed.glossary : []
+    ).filter(
+      (entry) =>
+        entry &&
+        typeof entry.term === 'string' &&
+        typeof entry.definition === 'string' &&
+        typeof entry.context === 'string',
+    );
+    const fadedBlanks = (
+      Array.isArray(parsed.faded_blanks) ? parsed.faded_blanks : []
+    ).filter(
+      (blank) =>
+        blank &&
+        typeof blank.textBefore === 'string' &&
+        typeof blank.answer === 'string' &&
+        typeof blank.textAfter === 'string',
+    );
+    const labelToId = new Map(
+      groupNodes.map((n) => [n.label.toLowerCase(), n.id]),
+    );
+    const requiredNodeIds = (
+      Array.isArray(parsed.requiredConcepts) ? parsed.requiredConcepts : []
+    )
+      .filter((l) => typeof l === 'string')
       .map((l) => labelToId.get(l.toLowerCase()))
       .filter((id: string | undefined): id is string => !!id);
 
-    const finalRequired = requiredNodeIds.length > 0 ? requiredNodeIds : groupNodes.map((n) => n.id);
+    const finalRequired =
+      requiredNodeIds.length > 0
+        ? requiredNodeIds
+        : groupNodes.map((n) => n.id);
 
-    let nclexQuestions = (parsed.nclex_questions || [])
+    let nclexQuestions = (
+      Array.isArray(parsed.nclex_questions) ? parsed.nclex_questions : []
+    )
       .filter(isStrongNclexQuestion)
       .map(randomizeNclexQuestion);
 
-    if (studyMode === "nursing" && nclexQuestions.length < 5) {
+    if (studyMode === 'nursing' && nclexQuestions.length < 5) {
       const supplemental = await generateSupplementalNclexQuestions(
         groupName,
         conceptList,
         docContext,
         5 - nclexQuestions.length,
         nclexQuestions,
-        nursingPacketText
+        nursingPacketText,
       );
       nclexQuestions = [...nclexQuestions, ...supplemental];
     }
 
-    if (studyMode === "nursing") {
+    if (studyMode === 'nursing') {
       nclexQuestions = await refineNclexQuestions(
         nclexQuestions.slice(0, Math.max(5, nclexQuestions.length)),
         groupName,
         conceptList,
         docContext,
-        nursingPacketText
+        nursingPacketText,
       );
       if (nclexQuestions.length < 5) {
         const topOff = await generateSupplementalNclexQuestions(
@@ -456,23 +591,24 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
           docContext,
           5 - nclexQuestions.length,
           nclexQuestions,
-          nursingPacketText
+          nursingPacketText,
         );
         nclexQuestions = [...nclexQuestions, ...topOff];
       }
     }
 
-    const { data: saved, error: saveError } = await supabase
-      .from("workbench_content")
+    const { data: saved, error: saveError } = await database
+      .from('workbench_content')
       .insert({
         document_id: documentId,
         group_name: groupName,
-        brief_html: parsed.brief || "",
+        brief_html: parsed.brief || '',
         inquiry_questions: inquiryQuestions,
-        faded_blanks: parsed.faded_blanks || [],
-        engineering_problems: parsed.engineering_problems || [],
-        nclex_questions: studyMode === "nursing" ? nclexQuestions : [],
-        glossary: parsed.glossary || [],
+        application_questions: applicationQuestions,
+        faded_blanks: fadedBlanks,
+        engineering_problems: engineeringProblems,
+        nclex_questions: studyMode === 'nursing' ? nclexQuestions : [],
+        glossary,
         node_ids: groupNodes.map((n) => n.id),
         required_node_ids: finalRequired,
       })
@@ -480,12 +616,12 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
       .single();
 
     if (saveError) {
-      if (saveError.code === "23505") {
-        const { data: racedContent, error: refetchError } = await supabase
-          .from("workbench_content")
-          .select("*")
-          .eq("document_id", documentId)
-          .eq("group_name", groupName)
+      if (saveError.code === '23505') {
+        const { data: racedContent, error: refetchError } = await database
+          .from('workbench_content')
+          .select('*')
+          .eq('document_id', documentId)
+          .eq('group_name', groupName)
           .maybeSingle();
 
         if (refetchError) {
@@ -502,52 +638,50 @@ ${docContext ? `Document context (from "${doc?.filename}"):\n${docContext}` : ""
 
     return NextResponse.json({ ...saved, study_mode: studyMode });
   } catch (error) {
-    console.error("Workbench content error:", error);
+    console.error('Workbench content error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load content" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : 'Failed to load content',
+      },
+      { status: 500 },
     );
   }
 }
 
-// POST — update group mastery stage
-export async function POST(
+// Share concurrent renders/retries on this server; the existing unique key also
+// protects persistence if separate server instances finish simultaneously.
+const preparing = new Map<string, Promise<{ status: number; body: unknown }>>();
+export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  context: { params: Promise<{ documentId: string }> },
 ) {
-  try {
-    const { documentId } = await params;
-    const { group, stage } = await request.json();
-
-    if (!group || typeof stage !== "number" || stage < 0 || stage > 3) {
-      return NextResponse.json(
-        { error: "group and stage (0-3) required" },
-        { status: 400 }
-      );
-    }
-
-    const { error } = await supabase
-      .from("workbench_mastery")
-      .upsert(
-        {
-          document_id: documentId,
-          group_name: group,
-          stage_completed: stage,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "document_id,group_name" }
-      );
-
-    if (error) {
-      throw error;
-    }
-
-    return NextResponse.json({ success: true, stage });
-  } catch (error) {
-    console.error("Workbench mastery error:", error);
+  const { documentId } = await context.params;
+  const group = request.nextUrl.searchParams.get('group');
+  if (!validGroup(group))
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update mastery" },
-      { status: 500 }
+      { error: 'Choose a topic from the workbench.' },
+      { status: 400 },
     );
+  const key = JSON.stringify([documentId, group]);
+  let pending = preparing.get(key);
+  if (!pending) {
+    pending = prepareLesson(request, context).then(async (response) => ({
+      status: response.status,
+      body: await response.json(),
+    }));
+    preparing.set(key, pending);
+    void pending.finally(() => preparing.delete(key)).catch(() => {});
   }
+  const result = await pending;
+  return NextResponse.json(result.body, { status: result.status });
+}
+export async function POST() {
+  return NextResponse.json(
+    {
+      error:
+        'Use the learning session to record practice; reading alone does not demonstrate recall.',
+    },
+    { status: 410 },
+  );
 }

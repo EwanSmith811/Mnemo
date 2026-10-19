@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState, useRef } from "react";
-import type { TopicSummary } from "@/types";
+import { useState, useRef } from 'react';
+import type { TopicSummary } from '@/types';
 
 export default function TopicSummaryDialog({
   documentId,
@@ -41,8 +41,18 @@ export default function TopicSummaryDialog({
         onClick={openDialog}
         className="inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover hover-glow-green"
       >
-        <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        <svg
+          className="h-4 w-4 text-emerald-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+          />
         </svg>
         <span className="text-zinc-300">Topic Summaries</span>
       </button>
@@ -57,13 +67,25 @@ export default function TopicSummaryDialog({
         <div className="flex h-[70vh] flex-col">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-            <h2 className="text-lg font-semibold text-zinc-100">Topic Summaries</h2>
+            <h2 className="text-lg font-semibold text-zinc-100">
+              Topic Summaries
+            </h2>
             <button
               onClick={closeDialog}
               className="rounded-lg p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -93,8 +115,8 @@ export default function TopicSummaryDialog({
                     onClick={() => setSelectedIndex(index)}
                     className={`block w-full px-4 py-3 text-left text-sm transition-all ${
                       index === selectedIndex
-                        ? "bg-emerald-500/10 font-medium text-emerald-400"
-                        : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                        ? 'bg-emerald-500/10 font-medium text-emerald-400'
+                        : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
                     }`}
                   >
                     {s.topic_name}
@@ -109,7 +131,7 @@ export default function TopicSummaryDialog({
                 </h3>
                 <div className="space-y-3 text-sm leading-relaxed text-zinc-400">
                   {summaries[selectedIndex].summary
-                    .split("\n\n")
+                    .split('\n\n')
                     .map((paragraph, i) => (
                       <p key={i}>{paragraph}</p>
                     ))}

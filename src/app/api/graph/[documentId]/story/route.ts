@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { groq } from "@/lib/groq";
+import { NextRequest, NextResponse } from 'next/server';
+import { ai, AI_TEXT_OPTIONS } from '@/lib/ai';
 
 interface StoryRequestBody {
   concepts: { label: string; definition: string }[];
@@ -7,7 +7,7 @@ interface StoryRequestBody {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  { params }: { params: Promise<{ documentId: string }> },
 ) {
   try {
     await params;
@@ -15,23 +15,34 @@ export async function POST(
     const body: StoryRequestBody = await request.json();
     const { concepts } = body;
 
-    if (!concepts || concepts.length < 2) {
+    if (
+      !Array.isArray(concepts) ||
+      concepts.length < 2 ||
+      concepts.length > 8 ||
+      concepts.some(
+        (c) =>
+          typeof c.label !== 'string' ||
+          c.label.length > 120 ||
+          typeof c.definition !== 'string' ||
+          c.definition.length > 2000,
+      )
+    ) {
       return NextResponse.json(
-        { error: "Select at least 2 concepts" },
-        { status: 400 }
+        { error: 'Select between 2 and 8 valid concepts' },
+        { status: 400 },
       );
     }
 
     const conceptList = concepts
       .map((c, i) => `${i + 1}. ${c.label}: ${c.definition}`)
-      .join("\n");
+      .join('\n');
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const response = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: [
         {
-          role: "system",
-          content: `You are a deranged comedy writer who moonlights as a memory coach. Your mnemonic stories are legendary: short, punchy, and absurd enough to stick.
+          role: 'system',
+          content: `You are a memory coach who creates short, imaginative mnemonic stories. Preserve the factual meaning of each concept while making the story memorable.
 
 Rules:
 - For each concept, invent a ridiculous sound-alike character or object.
@@ -50,28 +61,31 @@ KEY:
 ...`,
         },
         {
-          role: "user",
+          role: 'user',
           content: `Mnemonic story for these ${concepts.length} concepts:\n\n${conceptList}`,
         },
       ],
       temperature: 1,
-      max_tokens: 1024,
+      max_completion_tokens: 1024,
     });
 
     const story = response.choices[0]?.message?.content;
     if (!story) {
       return NextResponse.json(
-        { error: "Failed to generate story" },
-        { status: 500 }
+        { error: 'Failed to generate story' },
+        { status: 500 },
       );
     }
 
     return NextResponse.json({ story });
   } catch (error) {
-    console.error("Graph story error:", error);
+    console.error('Graph story error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate story" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : 'Failed to generate story',
+      },
+      { status: 500 },
     );
   }
 }

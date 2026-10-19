@@ -1,7 +1,7 @@
 export interface Document {
   id: string;
   filename: string;
-  file_type: "pdf" | "pptx";
+  file_type: import('@/lib/document-formats').DocumentFileType;
   study_mode: StudyMode;
   file_size_bytes: number | null;
   extracted_text_length: number | null;
@@ -9,7 +9,7 @@ export interface Document {
   quiz_question_count: number;
   topic_summary_count: number;
   concept_node_count: number;
-  status: "processing" | "completed" | "failed";
+  status: 'processing' | 'completed' | 'failed';
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -28,14 +28,10 @@ export interface Flashcard {
   created_at: string;
 }
 
-export type StudyMode = "nursing" | "engineers";
+export type StudyMode = 'nursing' | 'engineers';
 
 export type QuestionType =
-  | "mcq"
-  | "multiple_select"
-  | "short_answer"
-  | "nclex"
-  | "engineering";
+  'mcq' | 'multiple_select' | 'short_answer' | 'nclex' | 'engineering';
 
 export interface QuizQuestion {
   id: string;
@@ -86,7 +82,7 @@ export interface QuizSettings {
   questionTypes: QuestionType[];
 }
 
-export type ReviewRating = "again" | "hard" | "good" | "easy";
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -183,6 +179,7 @@ export interface WorkbenchContent {
   study_mode?: StudyMode;
   brief_html: string;
   inquiry_questions: InquiryQuestion[];
+  application_questions?: InquiryQuestion[];
   faded_blanks: FadedBlank[];
   engineering_problems: EngineeringProblem[];
   nclex_questions: NclexQuestion[];
@@ -207,4 +204,5 @@ export interface WorkbenchGroupStatus {
   requiredNodeIds: string[];
   stageCompleted: number;
   hasContent: boolean;
+  session?: import('@/lib/workbench-learning').LearningSession | null;
 }

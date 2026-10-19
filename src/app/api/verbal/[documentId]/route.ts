@@ -1,73 +1,83 @@
-import { NextRequest } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { groq } from "@/lib/groq";
+import { NextRequest } from 'next/server';
+import { database } from '@/lib/database';
+import { isStudyMessages } from '@/lib/request-validation';
+import { ai, AI_TEXT_OPTIONS } from '@/lib/ai';
 
 export const maxDuration = 30;
 
 interface Message {
-  role: "user" | "assistant" | "system";
+  role: 'user' | 'assistant' | 'system';
   content: string;
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ documentId: string }> }
+  { params }: { params: Promise<{ documentId: string }> },
 ) {
   try {
     const { documentId } = await params;
     const { messages, mode } = (await request.json()) as {
       messages: Message[];
-      mode: "user_explains" | "ai_quizzes";
+      mode: 'user_explains' | 'ai_quizzes';
     };
 
+    if (
+      !isStudyMessages(messages) ||
+      !['user_explains', 'ai_quizzes'].includes(mode)
+    )
+      return Response.json(
+        { error: 'Provide a valid conversation and practice mode.' },
+        { status: 400 },
+      );
+
     // Fetch document context
-    const { data: doc, error: docError } = await supabase
-      .from("documents")
-      .select("filename, content")
-      .eq("id", documentId)
+    const { data: doc, error: docError } = await database
+      .from('documents')
+      .select('filename, content')
+      .eq('id', documentId)
       .single();
 
     if (docError || !doc) {
-      return new Response(JSON.stringify({ error: "Document not found" }), {
+      return new Response(JSON.stringify({ error: 'Document not found' }), {
         status: 404,
-        headers: { "Content-Type": "application/json" },
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    const documentContext = doc.content ? doc.content.slice(0, 50000) : "";
+    const documentContext = doc.content ? doc.content.slice(0, 50000) : '';
 
     // Fetch summaries + flashcards for richer context
     const [summariesRes, flashcardsRes] = await Promise.all([
-      supabase
-        .from("topic_summaries")
-        .select("topic_name, summary")
-        .eq("document_id", documentId),
-      supabase
-        .from("flashcards")
-        .select("term, definition")
-        .eq("document_id", documentId)
+      database
+        .from('topic_summaries')
+        .select('topic_name, summary')
+        .eq('document_id', documentId),
+      database
+        .from('flashcards')
+        .select('term, definition')
+        .eq('document_id', documentId)
         .limit(40),
     ]);
 
     const summaryContext =
       summariesRes.data
         ?.map((s) => `## ${s.topic_name}\n${s.summary}`)
-        .join("\n\n") || "";
+        .join('\n\n') || '';
 
     const flashcardContext =
       flashcardsRes.data
         ?.map((f) => `- ${f.term}: ${f.definition}`)
-        .join("\n") || "";
+        .join('\n') || '';
 
     const systemPrompt =
-      mode === "user_explains"
+      mode === 'user_explains'
         ? `You are a Socratic tutor evaluating a student's verbal explanation of material from "${doc.filename}".
 
 DOCUMENT CONTENT:
 ${documentContext}
 
-${summaryContext ? `\nTOPIC SUMMARIES:\n${summaryContext}` : ""}
-${flashcardContext ? `\nKEY TERMS:\n${flashcardContext}` : ""}
+${summaryContext ? `\nTOPIC SUMMARIES:\n${summaryContext}` : ''}
+${flashcardContext ? `\nKEY TERMS:\n${flashcardContext}` : ''}
 
 ROLE & RULES:
 - The student will verbally explain concepts from their study material.
@@ -85,8 +95,8 @@ ROLE & RULES:
 DOCUMENT CONTENT:
 ${documentContext}
 
-${summaryContext ? `\nTOPIC SUMMARIES:\n${summaryContext}` : ""}
-${flashcardContext ? `\nKEY TERMS:\n${flashcardContext}` : ""}
+${summaryContext ? `\nTOPIC SUMMARIES:\n${summaryContext}` : ''}
+${flashcardContext ? `\nKEY TERMS:\n${flashcardContext}` : ''}
 
 ROLE & RULES:
 - YOU pick a topic/concept from the document and ask the student a question about it.
@@ -100,16 +110,16 @@ ROLE & RULES:
 - On the very first message, skip any long introduction and immediately ask the first question in one sentence.`;
 
     const llmMessages: Message[] = [
-      { role: "system", content: systemPrompt },
+      { role: 'system', content: systemPrompt },
       ...messages,
     ];
 
     // Stream the response
-    const stream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const stream = await ai.chat.completions.create({
+      ...AI_TEXT_OPTIONS,
       messages: llmMessages,
       temperature: 0.7,
-      max_tokens: 200,
+      max_completion_tokens: 200,
       stream: true,
     });
 
@@ -122,17 +132,19 @@ ROLE & RULES:
             const content = chunk.choices[0]?.delta?.content;
             if (content) {
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ text: content })}\n\n`)
+                encoder.encode(
+                  `data: ${JSON.stringify({ text: content })}\n\n`,
+                ),
               );
             }
           }
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
-        } catch (err) {
+        } catch {
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ error: "Stream failed" })}\n\n`
-            )
+              `data: ${JSON.stringify({ error: 'Stream failed' })}\n\n`,
+            ),
           );
           controller.close();
         }
@@ -141,18 +153,18 @@ ROLE & RULES:
 
     return new Response(readable, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
       },
     });
   } catch (error) {
-    console.error("Verbal quiz error:", error);
+    console.error('Verbal quiz error:', error);
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Verbal quiz failed",
+        error: error instanceof Error ? error.message : 'Verbal quiz failed',
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
     );
   }
 }

@@ -1,8 +1,9 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import type { TopicSummary } from "@/types";
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalFocus } from '@/lib/use-modal-focus';
+import type { TopicSummary } from '@/types';
 
 interface AddTopicSummaryDialogProps {
   documentId: string;
@@ -16,21 +17,19 @@ export default function AddTopicSummaryDialog({
   onAdd,
 }: AddTopicSummaryDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [topicName, setTopicName] = useState("");
-  const [summary, setSummary] = useState("");
+  const [topicName, setTopicName] = useState('');
+  const [summary, setSummary] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const [error, setError] = useState('');
+  const panelRef = useModalFocus(isOpen, () => {
+    if (!isSubmitting) setIsOpen(false);
+  });
 
   const openDialog = () => {
     if (isDisabled) return;
-    setTopicName("");
-    setSummary("");
-    setError("");
+    setTopicName('');
+    setSummary('');
+    setError('');
     setIsOpen(true);
   };
 
@@ -43,17 +42,17 @@ export default function AddTopicSummaryDialog({
     e.preventDefault();
 
     if (!topicName.trim() || !summary.trim()) {
-      setError("Both fields are required.");
+      setError('Both fields are required.');
       return;
     }
 
     setIsSubmitting(true);
-    setError("");
+    setError('');
 
     try {
       const res = await fetch(`/api/summaries/${documentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic_name: topicName.trim(),
           summary: summary.trim(),
@@ -62,14 +61,16 @@ export default function AddTopicSummaryDialog({
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to create topic summary");
+        throw new Error(data.error || 'Failed to create topic summary');
       }
 
       const createdSummary: TopicSummary = await res.json();
       onAdd(createdSummary);
       setIsOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create topic summary");
+      setError(
+        err instanceof Error ? err.message : 'Failed to create topic summary',
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -81,29 +82,51 @@ export default function AddTopicSummaryDialog({
       onClick={closeDialog}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add topic summary"
+        tabIndex={-1}
         className="w-full max-w-2xl rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">Add Topic Summary</h2>
+            <h2 className="text-lg font-semibold text-zinc-100">
+              Add Topic Summary
+            </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Write your own explanation and keep it in this document&apos;s topic list.
+              Write your own explanation and keep it in this document&apos;s
+              topic list.
             </p>
           </div>
           <button
             onClick={closeDialog}
+            aria-label="Close dialog"
             className="rounded-lg p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="topic-name" className="mb-1 block text-sm font-medium text-zinc-400">
+            <label
+              htmlFor="topic-name"
+              className="mb-1 block text-sm font-medium text-zinc-400"
+            >
               Topic name
             </label>
             <input
@@ -117,7 +140,10 @@ export default function AddTopicSummaryDialog({
           </div>
 
           <div className="mb-4">
-            <label htmlFor="topic-summary" className="mb-1 block text-sm font-medium text-zinc-400">
+            <label
+              htmlFor="topic-summary"
+              className="mb-1 block text-sm font-medium text-zinc-400"
+            >
               Summary
             </label>
             <textarea
@@ -143,9 +169,9 @@ export default function AddTopicSummaryDialog({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50"
+              className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-medium text-white transition-all  disabled:opacity-50"
             >
-              {isSubmitting ? "Saving..." : "Save Topic"}
+              {isSubmitting ? 'Saving...' : 'Save Topic'}
             </button>
           </div>
         </form>
@@ -160,13 +186,23 @@ export default function AddTopicSummaryDialog({
         disabled={isDisabled}
         className="inline-flex items-center gap-2 rounded-xl glass px-4 py-2 text-sm font-medium transition-all glass-hover hover-glow-emerald disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        <svg
+          className="h-4 w-4 text-emerald-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v16m8-8H4"
+          />
         </svg>
         <span className="text-zinc-300">Add Your Own Topic</span>
       </button>
 
-      {mounted && createPortal(modal, document.body)}
+      {isOpen && createPortal(modal, document.body)}
     </>
   );
 }

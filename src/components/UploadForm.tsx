@@ -1,282 +1,190 @@
-"use client";
-
-import { useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
-import type { StudyMode } from "@/types";
-
-interface UploadFormProps {
+'use client';
+import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import GenerationScreen from './GenerationScreen';
+import { readUploadProgress, type UploadStage } from '@/lib/upload-progress';
+import type { StudyMode } from '@/types';
+import { DOCUMENT_ACCEPT, getDocumentFileType } from '@/lib/document-formats';
+const MAX_SIZE = 4 * 1024 * 1024;
+export default function UploadForm({
+  onUploadComplete,
+}: {
   onUploadComplete: () => void;
-}
-
-export default function UploadForm({ onUploadComplete }: UploadFormProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [error, setError] = useState<{ title: string; detail?: string; stage?: string } | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false
-  );
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) prepareFile(file);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) prepareFile(file);
-  };
-
-  const prepareFile = (file: File) => {
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    if (ext !== "pdf" && ext !== "pptx") {
-      setError({
-        title: "Only PDF and PPTX files are supported.",
-        detail: `The file "${file.name}" is not a supported upload type.`,
-        stage: "validation",
-      });
-      if (fileInputRef.current) fileInputRef.current.value = "";
+}) {
+  const router = useRouter();
+  const [screen, setScreen] = useState(false);
+  const [stage, setStage] = useState<UploadStage>('uploading');
+  const [ready, setReady] = useState({ graph: false, materials: false });
+  const [complete, setComplete] = useState(false);
+  const inFlight = useRef(false);
+  const [mode, setMode] = useState<StudyMode>('engineers');
+  const [file, setFile] = useState<File | null>(null);
+  const [phase, setPhase] = useState<'idle' | 'processing'>('idle');
+  const [error, setError] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  function choose(next?: File) {
+    if (!next) return;
+    setError('');
+    if (!getDocumentFileType(next.name)) {
+      setFile(null);
+      setError('Choose a PDF or PowerPoint file (.pptx, .ppt, .pps, .ppsx).');
       return;
     }
-
-    setError(null);
-    setPendingFile(file);
-  };
-
-  const closeModeModal = () => {
-    setPendingFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const uploadFile = (file: File, studyMode: StudyMode) => {
-    setPendingFile(null);
-    setUploadPhase("uploading");
-    setUploadProgress(0);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("studyMode", studyMode);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        // Scale file transfer to 0-70% so the bar never hits 100% before AI processing completes
-        setUploadProgress(Math.min(Math.round((e.loaded / e.total) * 70), 70));
-      }
-    });
-
-    xhr.upload.addEventListener("loadend", () => {
-      setUploadPhase("processing");
-      setUploadProgress(70);
-    });
-
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        // Jump to 100% briefly so the user sees completion, then clear
-        setUploadProgress(100);
-        setTimeout(() => {
-          setUploadPhase("idle");
-          setUploadProgress(0);
-          onUploadComplete();
-        }, 400);
-      } else {
-        let nextError = {
-          title: "Upload failed.",
-          detail: "The server did not return a detailed reason.",
-          stage: "processing",
-        };
-        try {
-          const data = JSON.parse(xhr.responseText);
-          nextError = {
-            title: data.error || nextError.title,
-            detail: data.detail,
-            stage: data.stage,
-          };
-        } catch { /* ignore parse error */ }
-        setError(nextError);
-        setUploadPhase("idle");
-        setUploadProgress(0);
-      }
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    });
-
-    xhr.addEventListener("error", () => {
-      setError({
-        title: "Upload failed before the server could respond.",
-        detail: "Check your connection and try again.",
-        stage: "network",
+    if (!next.size || next.size > MAX_SIZE) {
+      setError(
+        'Choose a file between 1 byte and 4 MB. Split larger documents before uploading.',
+      );
+      return;
+    }
+    setFile(next);
+  }
+  async function upload() {
+    if (!file || inFlight.current) return;
+    inFlight.current = true;
+    setScreen(true);
+    setStage('uploading');
+    setReady({ graph: false, materials: false });
+    setComplete(false);
+    setPhase('processing');
+    setError('');
+    const form = new FormData();
+    form.append('file', file);
+    form.append('studyMode', mode);
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: form,
+        headers: { Accept: 'application/x-ndjson' },
       });
-      setUploadPhase("idle");
-      setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    });
-
-    xhr.send(formData);
-  };
-
-  const isActive = uploadPhase !== "idle";
-
-  const modal = pendingFile ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-[8px] px-4">
-          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
-            <div className="mb-5">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
-                Choose Study Mode
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-zinc-100">
-                How should we build this document?
-              </h2>
-              <p className="mt-2 text-sm text-zinc-400">
-                {pendingFile.name} will be processed with a study flow tailored to the mode you pick.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <button
-                onClick={() => uploadFile(pendingFile, "nursing")}
-                className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-left transition-all hover:border-emerald-400/40 hover:bg-emerald-500/15"
-              >
-                <p className="text-sm font-semibold text-emerald-300">Nursing</p>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Adds NCLEX-style practice to the workbench and quiz.
-                </p>
-              </button>
-
-              <button
-                onClick={() => uploadFile(pendingFile, "engineers")}
-                className="w-full rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4 text-left transition-all hover:border-amber-400/40 hover:bg-amber-500/15"
-              >
-                <p className="text-sm font-semibold text-amber-300">Engineers</p>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Keeps calculation-heavy workout questions in workbench and quiz.
-                </p>
-              </button>
-            </div>
-
-            <button
-              onClick={closeModeModal}
-              className="mt-4 w-full rounded-2xl border border-white/10 px-4 py-3 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null;
-
+      const data = await readUploadProgress(res, (event) => {
+        setStage(event.stage);
+        if (event.ready)
+          setReady((previous) => ({ ...previous, [event.ready!]: true }));
+      });
+      setComplete(true);
+      onUploadComplete();
+      router.replace(`/documents/${data.document_id}`);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Upload failed. Check your connection and retry.',
+      );
+      inFlight.current = false;
+      setPhase('idle');
+    }
+  }
+  const busy = phase !== 'idle';
   return (
-    <div>
-      {mounted && createPortal(modal, document.body)}
+    <div className="upload-form" aria-busy={busy}>
+      {screen && file && (
+        <GenerationScreen
+          filename={file.name}
+          stage={stage}
+          ready={ready}
+          error={error}
+          complete={complete}
+          onRetry={upload}
+          onBack={() => {
+            setScreen(false);
+            setError('');
+          }}
+        />
+      )}
+      <fieldset disabled={busy} className="study-mode">
+        <legend>Study focus</legend>
+        <div>
+          {(
+            [
+              ['engineers', 'Engineering', 'Calculations & problem solving'],
+              ['nursing', 'Nursing', 'Clinical reasoning & NCLEX'],
+            ] as const
+          ).map(([value, name, description]) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="studyMode"
+                value={value}
+                checked={mode === value}
+                onChange={() => setMode(value)}
+              />
+              <span>
+                <strong>{name}</strong>
+                <small>{description}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !isActive && fileInputRef.current?.click()}
-        className={`group cursor-pointer rounded-2xl p-12 text-center transition-all duration-300 ${
-          isDragging
-            ? "glass-blue glow-blue"
-            : "glass gradient-border hover-glow-purple animate-border-glow"
-        } ${isActive ? "pointer-events-none" : ""}`}
+        className={`file-drop ${dragging ? 'is-dragging' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!busy) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!busy) choose(e.dataTransfer.files[0]);
+        }}
       >
         <input
-          ref={fileInputRef}
+          ref={input}
+          id="document-file"
           type="file"
-          accept=".pdf,.pptx"
-          onChange={handleFileSelect}
-          className="hidden"
+          accept={DOCUMENT_ACCEPT}
+          disabled={busy}
+          onChange={(e) => choose(e.target.files?.[0])}
+          className="sr-only"
         />
-
-        {isActive ? (
-          <div>
-            <div className="relative mx-auto mb-6 h-12 w-12">
-              <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-blue-400" />
-            </div>
-
-            {uploadPhase === "uploading" ? (
-              <>
-                <p className="text-lg font-medium text-zinc-200">Uploading file...</p>
-                <div className="mx-auto mt-4 h-2 w-64 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 ease-out"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-sm text-zinc-500">{uploadProgress}%</p>
-              </>
-            ) : (
-              <>
-                <p className="text-lg font-medium text-zinc-200">Processing your document...</p>
-                <div className="mx-auto mt-4 h-2 w-64 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full transition-all duration-500 ease-out"
-                    style={{
-                      width: `${uploadProgress}%`,
-                      background: "linear-gradient(90deg, #8b5cf6, #ec4899)",
-                    }}
-                  />
-                </div>
-                <p className="mt-2 text-sm text-zinc-500">
-                  {uploadProgress === 100 ? "Complete!" : "Generating study materials with AI"}
-                </p>
-              </>
-            )}
-          </div>
-        ) : (
-          <div>
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 transition-transform duration-300 group-hover:scale-110">
-              <svg
-                className="h-8 w-8 text-blue-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
-            </div>
-            <p className="text-lg font-medium text-zinc-200">
-              Drop a PDF or PowerPoint file here
-            </p>
-            <p className="mt-2 text-sm text-zinc-500">
-              or click to browse (.pdf, .pptx)
-            </p>
-          </div>
-        )}
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden
+        >
+          <path d="M12 16V3m-4 4 4-4 4 4M4 15v5h16v-5" />
+        </svg>
+        <label htmlFor="document-file">
+          {file ? file.name : 'Drop your document here'}
+          <span>
+            {file
+              ? `${(file.size / 1024 / 1024).toFixed(2)} MB · Choose a different file`
+              : 'or browse files · PDF / PPTX / PPT / PPS / PPSX · Up to 4 MB'}
+          </span>
+        </label>
       </div>
-
-      {error && (
-        <div className="mt-3 rounded-xl glass border border-red-500/20 px-4 py-3">
-          <p className="text-sm font-medium text-red-400">{error.title}</p>
-          {error.detail && (
-            <p className="mt-1 text-sm leading-relaxed text-red-300/90">{error.detail}</p>
-          )}
-          {error.stage && (
-            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
-              Stage: {error.stage.replace(/_/g, " ")}
-            </p>
-          )}
-        </div>
+      <button
+        className="primary-button upload-button"
+        disabled={!file || busy}
+        onClick={upload}
+      >
+        {busy ? (
+          <>
+            <span className="loading-spinner" />
+            Preparing study material…
+          </>
+        ) : (
+          <>
+            Generate study material <span aria-hidden>↗</span>
+          </>
+        )}
+      </button>
+      {busy && (
+        <p className="upload-help" role="status">
+          Reading your document and generating your study tools. This may take a
+          few minutes. Keep this page open.
+        </p>
+      )}
+      {error && !screen && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );

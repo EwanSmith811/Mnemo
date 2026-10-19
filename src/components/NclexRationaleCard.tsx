@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 interface ParsedNclexRationale {
   bestAnswer: string;
@@ -7,8 +7,10 @@ interface ParsedNclexRationale {
 }
 
 function parseNclexRationale(text: string): ParsedNclexRationale {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  const bestMatch = normalized.match(/Best answer:\s*(.*?)(?=\s*Wrong options:|\s*Rule:|$)/i);
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const bestMatch = normalized.match(
+    /Best answer:\s*(.*?)(?=\s*Wrong options:|\s*Rule:|$)/i,
+  );
   const wrongMatch = normalized.match(/Wrong options:\s*(.*?)(?=\s*Rule:|$)/i);
   const ruleMatch = normalized.match(/Rule:\s*(.*)$/i);
 
@@ -26,36 +28,45 @@ function parseNclexRationale(text: string): ParsedNclexRationale {
             text: match[2].trim(),
           };
         })
-        .filter((entry): entry is { label: string; text: string } => !!entry && !!entry.text)
+        .filter(
+          (entry): entry is { label: string; text: string } =>
+            !!entry && !!entry.text,
+        )
     : [];
 
   return {
     bestAnswer: bestMatch?.[1]?.trim() || text,
     wrongOptions,
-    rule: ruleMatch?.[1]?.trim() || "",
+    rule: ruleMatch?.[1]?.trim() || '',
   };
 }
 
 interface NclexRationaleCardProps {
   text: string;
-  variant?: "quiz" | "review" | "workbench";
+  variant?: 'quiz' | 'review' | 'workbench';
 }
 
 export default function NclexRationaleCard({
   text,
-  variant = "quiz",
+  variant = 'quiz',
 }: NclexRationaleCardProps) {
   const parsed = parseNclexRationale(text);
-  const isCompact = variant === "review";
+  const isCompact = variant === 'review';
 
   return (
-    <div className={`rounded-xl border border-emerald-500/15 bg-emerald-500/[0.07] ${isCompact ? "p-4" : "p-5"}`}>
-      <div className={`grid gap-3 ${isCompact ? "" : "md:grid-cols-[1.2fr_1fr]"}`}>
+    <div
+      className={`rounded-xl border border-emerald-500/15 bg-emerald-500/[0.07] ${isCompact ? 'p-4' : 'p-5'}`}
+    >
+      <div
+        className={`grid gap-3 ${isCompact ? '' : 'md:grid-cols-[1.2fr_1fr]'}`}
+      >
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300/80">
             Best Answer
           </p>
-          <p className={`mt-2 text-zinc-200 ${isCompact ? "text-sm" : "text-sm leading-relaxed"}`}>
+          <p
+            className={`mt-2 text-zinc-200 ${isCompact ? 'text-sm' : 'text-sm leading-relaxed'}`}
+          >
             {parsed.bestAnswer}
           </p>
 

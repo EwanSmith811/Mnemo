@@ -1,12 +1,17 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useMemo } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import QuizPlayer from "@/components/QuizPlayer";
-import QuizSettingsPanel from "@/components/QuizSettings";
-import ScoreDisplay from "@/components/ScoreDisplay";
-import type { QuizQuestion, QuestionType, QuizSettings, QuizAnswer } from "@/types";
+import { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import QuizPlayer from '@/components/QuizPlayer';
+import QuizSettingsPanel from '@/components/QuizSettings';
+import ScoreDisplay from '@/components/ScoreDisplay';
+import type {
+  QuizQuestion,
+  QuestionType,
+  QuizSettings,
+  QuizAnswer,
+} from '@/types';
 
 function shuffleArray<T>(arr: T[]): T[] {
   const shuffled = [...arr];
@@ -21,17 +26,24 @@ export default function QuizPage() {
   const params = useParams();
   const documentId = params.documentId as string;
 
+  const [loadError, setLoadError] = useState('');
   const [allQuestions, setAllQuestions] = useState<QuizQuestion[]>([]);
-  const [filteredQuestions, setFilteredQuestions] = useState<QuizQuestion[]>([]);
+  const [filteredQuestions, setFilteredQuestions] = useState<QuizQuestion[]>(
+    [],
+  );
   const [quizKey, setQuizKey] = useState(0);
-  const [phase, setPhase] = useState<"loading" | "settings" | "quiz" | "results">("loading");
+  const [phase, setPhase] = useState<
+    'loading' | 'settings' | 'quiz' | 'results'
+  >('loading');
   const [completedScore, setCompletedScore] = useState<{
     total_questions: number;
     correct_answers: number;
     score_percentage: number;
     answers: QuizAnswer[];
   } | null>(null);
-  const [completedQuestions, setCompletedQuestions] = useState<QuizQuestion[]>([]);
+  const [completedQuestions, setCompletedQuestions] = useState<QuizQuestion[]>(
+    [],
+  );
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isExhausted, setIsExhausted] = useState(false);
 
@@ -40,12 +52,17 @@ export default function QuizPage() {
       try {
         const res = await fetch(`/api/quiz/${documentId}`);
         const data: QuizQuestion[] = await res.json();
+        if (!res.ok)
+          throw new Error('Could not load study material. Try again.');
         setAllQuestions(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error("Failed to load quiz:", err);
+        console.error('Failed to load quiz:', err);
+        setLoadError(
+          'Could not load your quiz. Check your connection and reload this page.',
+        );
         setAllQuestions([]);
       } finally {
-        setPhase("settings");
+        setPhase('settings');
       }
     }
     load();
@@ -60,7 +77,7 @@ export default function QuizPage() {
       engineering: 0,
     };
     allQuestions.forEach((q) => {
-      const type = q.question_type || "mcq";
+      const type = q.question_type || 'mcq';
       counts[type] = (counts[type] || 0) + 1;
     });
     return counts;
@@ -71,7 +88,7 @@ export default function QuizPage() {
     const typeSet = new Set(questionTypes);
 
     const eligible = allQuestions.filter((q) =>
-      typeSet.has(q.question_type || "mcq")
+      typeSet.has(q.question_type || 'mcq'),
     );
     const shuffled = shuffleArray(eligible);
     const selected = shuffled.slice(0, questionCount);
@@ -79,16 +96,21 @@ export default function QuizPage() {
     setFilteredQuestions(selected);
     setIsExhausted(false);
     setQuizKey((k) => k + 1);
-    setPhase("quiz");
+    setPhase('quiz');
   };
 
   const handleQuizComplete = (
-    score: { total_questions: number; correct_answers: number; score_percentage: number; answers: QuizAnswer[] },
-    questions: QuizQuestion[]
+    score: {
+      total_questions: number;
+      correct_answers: number;
+      score_percentage: number;
+      answers: QuizAnswer[];
+    },
+    questions: QuizQuestion[],
   ) => {
     setCompletedScore(score);
     setCompletedQuestions(questions);
-    setPhase("results");
+    setPhase('results');
   };
 
   const handleAddMore = async () => {
@@ -101,8 +123,8 @@ export default function QuizPage() {
     setIsLoadingMore(true);
     try {
       const res = await fetch(`/api/quiz/${documentId}/more`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           existingQuestions: allQuestions.map((q) => q.question),
           questionCount: 10,
@@ -124,7 +146,7 @@ export default function QuizPage() {
     }
   };
 
-  if (phase === "loading") {
+  if (phase === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -140,13 +162,28 @@ export default function QuizPage() {
 
   return (
     <div className="min-h-screen px-6 py-12">
+      {loadError && (
+        <p className="inline-error" role="alert">
+          {loadError}
+        </p>
+      )}
       <div className="mx-auto max-w-3xl">
         <Link
           href={`/documents/${documentId}`}
           className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
           Back to document
         </Link>
@@ -156,8 +193,8 @@ export default function QuizPage() {
           <div className="mt-2 glow-line-purple w-16" />
         </div>
 
-        {phase === "settings" && (
-          <div className="animate-fade-in-up delay-100 space-y-4" style={{ opacity: 0 }}>
+        {phase === 'settings' && (
+          <div className="animate-fade-in-up delay-100 space-y-4">
             <QuizSettingsPanel
               totalQuestionsByType={totalQuestionsByType}
               onStart={handleStartQuiz}
@@ -165,16 +202,20 @@ export default function QuizPage() {
             <div className="rounded-2xl glass p-5">
               <div className="flex items-center justify-between mb-1">
                 <div>
-                  <p className="text-sm font-medium text-zinc-200">Question pool</p>
+                  <p className="text-sm font-medium text-zinc-200">
+                    Question pool
+                  </p>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    {allQuestions.length} question{allQuestions.length !== 1 ? "s" : ""} total — generate more to expand variety
+                    {allQuestions.length} question
+                    {allQuestions.length !== 1 ? 's' : ''} total — generate more
+                    to expand variety
                   </p>
                 </div>
                 {!isExhausted ? (
                   <button
                     onClick={handleAddMore}
                     disabled={isLoadingMore}
-                    className="rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-[0_0_16px_rgba(139,92,246,0.3)] disabled:opacity-50 shrink-0"
+                    className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-[0_0_16px_rgba(139,92,246,0.3)] disabled:opacity-50 shrink-0"
                   >
                     {isLoadingMore ? (
                       <span className="flex items-center gap-2">
@@ -182,12 +223,14 @@ export default function QuizPage() {
                         Generating...
                       </span>
                     ) : (
-                      "+ Generate more"
+                      '+ Generate more'
                     )}
                   </button>
                 ) : (
                   <span className="text-xs text-zinc-500">
-                    {allQuestions.length >= 100 ? "Question limit (100) reached" : "Pool exhausted"}
+                    {allQuestions.length >= 100
+                      ? 'Question limit (100) reached'
+                      : 'Pool exhausted'}
                   </span>
                 )}
               </div>
@@ -195,7 +238,7 @@ export default function QuizPage() {
           </div>
         )}
 
-        {phase === "quiz" && (
+        {phase === 'quiz' && (
           <div className="animate-fade-in">
             <QuizPlayer
               key={quizKey}
@@ -206,12 +249,15 @@ export default function QuizPage() {
           </div>
         )}
 
-        {phase === "results" && completedScore && (
+        {phase === 'results' && completedScore && (
           <div className="animate-fade-in-up space-y-4">
-            <ScoreDisplay score={completedScore} questions={completedQuestions} />
+            <ScoreDisplay
+              score={completedScore}
+              questions={completedQuestions}
+            />
             <div className="mt-6">
               <button
-                onClick={() => setPhase("settings")}
+                onClick={() => setPhase('settings')}
                 className="w-full rounded-xl glass px-6 py-3 text-sm font-medium text-zinc-400 transition-all glass-hover"
               >
                 Start new quiz

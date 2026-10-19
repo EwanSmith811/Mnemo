@@ -1,4 +1,4 @@
-import type { ReviewQuality, ReviewRating } from "@/types";
+import type { ReviewQuality, ReviewRating } from '@/types';
 
 interface SM2Result {
   ease_factor: number;
@@ -11,7 +11,7 @@ export function calculateSM2(
   quality: ReviewQuality,
   currentEaseFactor: number,
   currentInterval: number,
-  currentRepetitions: number
+  currentRepetitions: number,
 ): SM2Result {
   let newEaseFactor = currentEaseFactor;
   let newInterval: number;
@@ -24,8 +24,7 @@ export function calculateSM2(
   } else {
     // Successful recall: update ease factor
     newEaseFactor =
-      currentEaseFactor +
-      (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+      currentEaseFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
 
     newEaseFactor = Math.max(1.3, newEaseFactor);
     newRepetitions = currentRepetitions + 1;
