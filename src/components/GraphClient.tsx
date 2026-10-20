@@ -17,6 +17,10 @@ import {
   NODE_HEIGHT as H,
 } from '@/lib/graph';
 import type { ConceptGraph } from '@/types';
+import { MAX_STORY_CONCEPTS } from '@/lib/memory-story';
+import StoryTheater, { type TheaterConcept } from './map/StoryTheater';
+import StoryTray from './map/StoryTray';
+import { Icon } from './ui';
 
 // Topic hues are theme tokens so the map follows light and dark mode.
 const COLORS = [1, 2, 3, 4, 5, 6].map((n) => `var(--topic-${n})`);
@@ -35,12 +39,10 @@ export default function GraphClient() {
   const [hidden, setHidden] = useState(false);
   const page = useRef<HTMLElement>(null);
   const [listView, setListView] = useState(false);
+  // Memory story: pick concepts on the map, then open the story theater.
+  const [storyMode, setStoryMode] = useState(false);
   const [storyNodes, setStoryNodes] = useState<string[]>([]);
-  const [story, setStory] = useState('');
-  const [storyLoading, setStoryLoading] = useState(false);
-  const [audioUrl, setAudioUrl] = useState('');
-  const [audioLoading, setAudioLoading] = useState(false);
-  const [audioError, setAudioError] = useState('');
+  const [theater, setTheater] = useState(false);
   const [view, setView] = useState(INITIAL_VIEW);
   const [hovered, setHovered] = useState<string | null>(null);
   const viewRef = useRef(view);
@@ -97,8 +99,6 @@ export default function GraphClient() {
         setGraph(next);
         setSelected(null);
         setStoryNodes([]);
-        setStory('');
-        setAudioUrl('');
       })
       .catch((err) => {
         if (err.name !== 'AbortError') setError(err.message);
@@ -274,7 +274,17 @@ export default function GraphClient() {
       height,
     });
   }
+  // The view before a concept was opened, restored when it's closed again.
+  const beforeFocus = useRef<typeof view | null>(null);
+  function deselect() {
+    setSelected(null);
+    setInspectorOpen(false);
+    if (beforeFocus.current) flyTo(beforeFocus.current);
+    beforeFocus.current = null;
+  }
   function focusNode(id: string) {
+    // Hopping between concepts keeps the original view to return to.
+    beforeFocus.current ??= viewRef.current;
     setSelected(id);
     setInspectorOpen(true);
     const node = positions.get(id),
@@ -301,6 +311,7 @@ export default function GraphClient() {
   }
   function focusTopic(topic: string) {
     setGroup(topic);
+    beforeFocus.current = null;
     setSelected(null);
     setInspectorOpen(false);
     const region = layout?.regions.find((r) => r.group === topic);
@@ -318,58 +329,27 @@ export default function GraphClient() {
       height: width / ratio,
     });
   }
-  useEffect(
-    () => () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    },
-    [audioUrl],
+  function toggleStoryNode(id: string) {
+    setStoryNodes((ids) =>
+      ids.includes(id)
+        ? ids.filter((x) => x !== id)
+        : ids.length >= MAX_STORY_CONCEPTS
+          ? ids
+          : [...ids, id],
+    );
+  }
+  const storyConcepts = useMemo<TheaterConcept[]>(
+    () =>
+      storyNodes
+        .map((id) => graph?.nodes.find((n) => n.id === id))
+        .filter((n): n is NonNullable<typeof n> => !!n)
+        .map((n) => ({
+          id: n.id,
+          label: n.label,
+          color: COLORS[Math.max(0, groups.indexOf(n.group)) % COLORS.length],
+        })),
+    [storyNodes, graph, groups],
   );
-  async function narrateStory() {
-    setAudioLoading(true);
-    setAudioError('');
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: story
-            .split('KEY:')[0]
-            .replace(/^STORY:\s*/, '')
-            .slice(0, 4096),
-        }),
-      });
-      if (!res.ok) throw new Error('Could not generate audio. Try again.');
-      setAudioUrl(URL.createObjectURL(await res.blob()));
-    } catch (err) {
-      setAudioError(
-        err instanceof Error ? err.message : 'Could not generate audio.',
-      );
-    } finally {
-      setAudioLoading(false);
-    }
-  }
-  async function generateStory() {
-    setStoryLoading(true);
-    setStory('');
-    setAudioUrl('');
-    setAudioError('');
-    try {
-      const res = await fetch(`/api/graph/${documentId}/story`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          concepts: graph?.nodes.filter((n) => storyNodes.includes(n.id)),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not create the story.');
-      setStory(data.story);
-    } catch (err) {
-      setStory(err instanceof Error ? err.message : 'Try again.');
-    } finally {
-      setStoryLoading(false);
-    }
-  }
   const paused = !motion || hidden;
   useEffect(() => {
     const element = svg.current;
@@ -380,11 +360,11 @@ export default function GraphClient() {
   }, [paused, loading, listView]);
   const root =
     layout?.nodes.find((n) => n.id === 'central') ?? layout?.nodes[0];
-  const showInspector = inspectorOpen && (!!current || storyNodes.length > 0);
+  const showInspector = inspectorOpen && !!current && !storyMode;
   return (
     <main
       ref={page}
-      className={`map-page map-immersive ${showInspector ? 'has-inspector' : ''} ${!motion || hidden ? 'motion-paused' : ''}`}
+      className={`map-page map-immersive ${showInspector ? 'has-inspector' : ''} ${storyMode ? 'is-story-mode' : ''} ${!motion || hidden ? 'motion-paused' : ''}`}
     >
       <header className="map-header">
         <div className="map-identity">
@@ -411,17 +391,34 @@ export default function GraphClient() {
             </span>
           </div>
         </div>
-        <Link className="map-workbench-link" href={`/workbench/${documentId}`}>
-          <span>Workbench</span>
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
+        <div className="map-header-actions">
+          <button
+            className={`map-story-toggle ${storyMode ? 'is-on' : ''}`}
+            aria-pressed={storyMode}
+            disabled={loading || !!error}
+            onClick={() => {
+              setStoryMode((on) => !on);
+              deselect();
+            }}
           >
-            <path d="M6 18 18 6M6 6h12v12" />
-          </svg>
-        </Link>
+            <Icon name={storyMode ? 'check' : 'sparkle'} size={16} />
+            <span>{storyMode ? 'Done' : 'Memory story'}</span>
+          </button>
+          <Link
+            className="map-workbench-link"
+            href={`/workbench/${documentId}`}
+          >
+            <span>Workbench</span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <path d="M6 18 18 6M6 6h12v12" />
+            </svg>
+          </Link>
+        </div>
       </header>
       {loading ? (
         <div className="map-status" role="status">
@@ -497,8 +494,15 @@ export default function GraphClient() {
                     .map((n) => (
                       <button
                         key={n.id}
-                        aria-pressed={selected === n.id}
-                        onClick={() => focusNode(n.id)}
+                        aria-pressed={
+                          storyMode
+                            ? storyNodes.includes(n.id)
+                            : selected === n.id
+                        }
+                        className={storyNodes.includes(n.id) ? 'is-picked' : ''}
+                        onClick={() =>
+                          storyMode ? toggleStoryNode(n.id) : focusNode(n.id)
+                        }
                       >
                         <span style={{ color: color(n.group) }}>{n.group}</span>
                         <strong>{n.label}</strong>
@@ -516,8 +520,7 @@ export default function GraphClient() {
                     viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
-                        setSelected(null);
-                        setInspectorOpen(false);
+                        deselect();
                         return;
                       }
                       if (e.target !== e.currentTarget) return;
@@ -646,10 +649,8 @@ export default function GraphClient() {
                       });
                     }}
                     onPointerUp={(e) => {
-                      if (drag.current && !drag.current.moved) {
-                        setSelected(null);
-                        setInspectorOpen(false);
-                      }
+                      if (drag.current && !drag.current.moved && selected)
+                        deselect();
                       pointers.current.delete(e.pointerId);
                       pinch.current = null;
                       drag.current = null;
@@ -955,7 +956,7 @@ export default function GraphClient() {
                           data-node={n.id}
                           aria-label={`${n.label}: ${n.definition}`}
                           title={n.label}
-                          className={`graph-node ${selected === n.id ? 'is-selected' : ''} ${n.id === root?.id ? 'is-root' : ''}`}
+                          className={`graph-node ${selected === n.id ? 'is-selected' : ''} ${n.id === root?.id ? 'is-root' : ''} ${storyNodes.includes(n.id) ? 'is-picked' : ''}`}
                           style={
                             {
                               '--node-color': color(n.group),
@@ -963,11 +964,17 @@ export default function GraphClient() {
                             } as CSSProperties
                           }
                           onClick={() =>
-                            selected === n.id
-                              ? (setSelected(null), setInspectorOpen(false))
-                              : focusNode(n.id)
+                            storyMode
+                              ? toggleStoryNode(n.id)
+                              : selected === n.id
+                                ? deselect()
+                                : focusNode(n.id)
                           }
-                          aria-pressed={selected === n.id}
+                          aria-pressed={
+                            storyMode
+                              ? storyNodes.includes(n.id)
+                              : selected === n.id
+                          }
                           onPointerEnter={(e) =>
                             e.pointerType === 'mouse' && setHovered(n.id)
                           }
@@ -976,6 +983,11 @@ export default function GraphClient() {
                           <span>{n.group}</span>
                           <strong>{n.label}</strong>
                           <i className="graph-node-port" aria-hidden />
+                          {storyNodes.includes(n.id) && (
+                            <b className="graph-node-pick mono" aria-hidden>
+                              {storyNodes.indexOf(n.id) + 1}
+                            </b>
+                          )}
                         </button>
                       </foreignObject>
                     ))}
@@ -1002,10 +1014,7 @@ export default function GraphClient() {
                 <button
                   className="map-close-inspector"
                   aria-label="Close concept details"
-                  onClick={() => {
-                    setInspectorOpen(false);
-                    setSelected(null);
-                  }}
+                  onClick={deselect}
                 >
                   ×
                 </button>
@@ -1053,84 +1062,49 @@ export default function GraphClient() {
                     </div>
                     <button
                       className="secondary-button"
-                      onClick={() =>
-                        setStoryNodes((ids) =>
-                          ids.includes(current.id)
-                            ? ids.filter((id) => id !== current.id)
-                            : [...ids, current.id].slice(0, 8),
-                        )
-                      }
-                    >
-                      {storyNodes.includes(current.id)
-                        ? 'Remove from memory story'
-                        : 'Add to memory story'}
-                    </button>
-                  </>
-                )}
-                {storyNodes.length > 0 && (
-                  <div className="story-panel">
-                    <h3>Memory story · {storyNodes.length}/8</h3>
-                    <p>
-                      {graph?.nodes
-                        .filter((n) => storyNodes.includes(n.id))
-                        .map((n) => n.label)
-                        .join(', ')}
-                    </p>
-                    <button
-                      className="primary-button"
-                      disabled={storyNodes.length < 2 || storyLoading}
-                      onClick={generateStory}
-                    >
-                      {storyLoading ? 'Writing story…' : 'Create memory story'}
-                    </button>
-                    <button
-                      className="text-button"
                       onClick={() => {
-                        setStoryNodes([]);
-                        setStory('');
-                        setAudioUrl('');
+                        toggleStoryNode(current.id);
+                        setStoryMode(true);
+                        setInspectorOpen(false);
                       }}
                     >
-                      Clear selection
+                      <Icon name="sparkle" size={15} />
+                      {storyNodes.includes(current.id)
+                        ? 'In your memory story'
+                        : 'Add to a memory story'}
                     </button>
-                    {story && (
-                      <>
-                        <p className="story-text" role="status">
-                          {story}
-                        </p>
-                        <button
-                          className="secondary-button"
-                          disabled={audioLoading}
-                          onClick={narrateStory}
-                        >
-                          {audioLoading
-                            ? 'Preparing audio…'
-                            : 'Read story aloud'}
-                        </button>
-                        <p className="upload-help">
-                          Narration uses an AI-generated voice.
-                        </p>
-                        {audioUrl && (
-                          <audio
-                            controls
-                            src={audioUrl}
-                            className="story-audio"
-                            aria-label="AI-generated memory story narration"
-                          />
-                        )}
-                        {audioError && (
-                          <p role="alert" className="inline-error">
-                            {audioError}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  </>
                 )}
               </aside>
             )}
           </div>
-          {!showInspector && (
+          {storyMode && (
+            <StoryTray
+              picked={storyConcepts}
+              visible={(layout?.nodes ?? []).filter((n) => matches.has(n.id))}
+              topic={group}
+              onRemove={toggleStoryNode}
+              onSelectAll={(ids) =>
+                setStoryNodes((current) =>
+                  [...new Set([...current, ...ids])].slice(
+                    0,
+                    MAX_STORY_CONCEPTS,
+                  ),
+                )
+              }
+              onClear={() => setStoryNodes([])}
+              onWrite={() => setTheater(true)}
+              onCancel={() => setStoryMode(false)}
+            />
+          )}
+          {theater && storyConcepts.length >= 2 && (
+            <StoryTheater
+              documentId={documentId}
+              concepts={storyConcepts}
+              onClose={() => setTheater(false)}
+            />
+          )}
+          {!showInspector && !storyMode && (
             <div className="map-topic-dock" aria-label="Topics">
               {groups.map((g) => (
                 <button
@@ -1156,11 +1130,6 @@ export default function GraphClient() {
             <button onClick={() => setMotion((v) => !v)} aria-pressed={motion}>
               {motion ? 'Pause motion' : 'Resume motion'}
             </button>
-            {storyNodes.length > 0 && (
-              <button onClick={() => setInspectorOpen((v) => !v)}>
-                Story ({storyNodes.length})
-              </button>
-            )}
           </div>
           <p className="map-hint">
             Drag to explore · Scroll to zoom · Select an idea

@@ -15,6 +15,7 @@ import '@/styles/workbench.css';
 import '@/styles/map.css';
 import '@/styles/chat.css';
 import '@/styles/voice.css';
+import '@/styles/story.css';
 import Navigation from '@/components/Navigation';
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
