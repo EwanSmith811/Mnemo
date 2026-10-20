@@ -15,7 +15,10 @@ export async function GET(
     .eq('document_id', documentId);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not load questions. Please retry.' },
+      { status: 500 },
+    );
   }
 
   const cleaned = (data ?? []).filter((question) => {

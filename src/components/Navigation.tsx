@@ -1,65 +1,107 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-const TOOLS = [
+import { useSyncExternalStore } from 'react';
+import { Icon } from './ui';
+import { Wordmark } from './Logo';
+
+export const STUDY_TOOLS = [
   ['documents', 'Overview'],
-  ['graph', 'Concept map'],
+  ['learn', 'Walkthrough'],
   ['flashcards', 'Flashcards'],
   ['quiz', 'Quiz'],
-  ['summaries', 'Summaries'],
   ['workbench', 'Workbench'],
+  ['graph', 'Concept map'],
+  ['summaries', 'Summaries'],
   ['chat', 'Ask Mnemo'],
-  ['verbal', 'Voice practice'],
-];
+  ['verbal', 'Voice'],
+] as const;
+
+type Theme = 'light' | 'dark';
+const themeListeners = new Set<() => void>();
+function currentTheme(): Theme {
+  const chosen = document.documentElement.dataset.theme;
+  if (chosen === 'light' || chosen === 'dark') return chosen;
+  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function subscribeTheme(listener: () => void) {
+  themeListeners.add(listener);
+  const media = matchMedia('(prefers-color-scheme: dark)');
+  media.addEventListener('change', listener);
+  return () => {
+    themeListeners.delete(listener);
+    media.removeEventListener('change', listener);
+  };
+}
+
+function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribeTheme, currentTheme, () => null);
+  const next: Theme = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button
+      type="button"
+      className="icon-button theme-toggle"
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
+      onClick={() => {
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('mnemo-theme', next);
+        } catch {}
+        themeListeners.forEach((listener) => listener());
+      }}
+    >
+      <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+    </button>
+  );
+}
+
 export default function Navigation() {
   const pathname = usePathname();
-  const segments = pathname.split('/').filter(Boolean);
-  const documentId = segments[1];
+  const [section, documentId] = pathname.split('/').filter(Boolean);
+  const inStudy =
+    !!documentId && STUDY_TOOLS.some(([route]) => route === section);
   return (
     <>
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
-      <nav className="site-navigation" aria-label="Main navigation">
-        <Link href="/" className="wordmark">
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 28 28"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M3 22V6L14 18L25 6V22"
-              stroke="currentColor"
-              strokeWidth="2.4"
-            />
-            <path d="M3 6H8M20 22H25" stroke="currentColor" strokeWidth="2.4" />
-          </svg>
-          mnemo<span className="brand-period">.</span>
-        </Link>
-        <Link
-          href="/"
-          className="library-link"
-          aria-current={pathname === '/' ? 'page' : undefined}
-        >
-          Document library
-        </Link>
-        <span className="nav-caption">Make knowledge stick.</span>
-      </nav>
-      {documentId && TOOLS.some(([route]) => route === segments[0]) && (
-        <nav className="study-navigation" aria-label="Study tools">
-          {TOOLS.map(([route, label]) => (
+      <header className="site-header">
+        <nav className="site-navigation" aria-label="Main navigation">
+          <Link href="/" aria-label="Mnemo home">
+            <Wordmark />
+          </Link>
+          <div className="site-navigation-end">
             <Link
-              key={route}
-              href={`/${route}/${documentId}`}
-              aria-current={segments[0] === route ? 'page' : undefined}
+              href="/#library"
+              className="nav-link"
+              aria-current={pathname === '/' ? 'page' : undefined}
             >
-              {label}
+              Library
             </Link>
-          ))}
+            <Link href="/#upload" className="nav-link nav-link-cta">
+              <Icon name="plus" size={15} />
+              New deck
+            </Link>
+            <ThemeToggle />
+          </div>
         </nav>
-      )}
+        {inStudy && (
+          <nav className="study-navigation" aria-label="Study tools">
+            <div>
+              {STUDY_TOOLS.map(([route, label]) => (
+                <Link
+                  key={route}
+                  href={`/${route}/${documentId}`}
+                  aria-current={section === route ? 'page' : undefined}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        )}
+      </header>
     </>
   );
 }

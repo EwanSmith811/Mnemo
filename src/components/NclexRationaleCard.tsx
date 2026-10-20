@@ -41,63 +41,30 @@ function parseNclexRationale(text: string): ParsedNclexRationale {
   };
 }
 
-interface NclexRationaleCardProps {
-  text: string;
-  variant?: 'quiz' | 'review' | 'workbench';
-}
-
-export default function NclexRationaleCard({
-  text,
-  variant = 'quiz',
-}: NclexRationaleCardProps) {
+export default function NclexRationaleCard({ text }: { text: string }) {
   const parsed = parseNclexRationale(text);
-  const isCompact = variant === 'review';
-
   return (
-    <div
-      className={`rounded-xl border border-emerald-500/15 bg-emerald-500/[0.07] ${isCompact ? 'p-4' : 'p-5'}`}
-    >
-      <div
-        className={`grid gap-3 ${isCompact ? '' : 'md:grid-cols-[1.2fr_1fr]'}`}
-      >
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300/80">
-            Best Answer
-          </p>
-          <p
-            className={`mt-2 text-zinc-200 ${isCompact ? 'text-sm' : 'text-sm leading-relaxed'}`}
-          >
-            {parsed.bestAnswer}
-          </p>
-
-          {parsed.rule && (
-            <div className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-              Rule: {parsed.rule}
-            </div>
-          )}
-        </div>
-
-        {parsed.wrongOptions.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
-              Why The Others Are Wrong
-            </p>
-            <div className="mt-2 space-y-2">
-              {parsed.wrongOptions.map((item, index) => (
-                <div
-                  key={`${item.label}-${index}`}
-                  className="rounded-lg border border-white/6 bg-black/20 px-3 py-2 text-sm text-zinc-300"
-                >
-                  <span className="mr-2 text-xs font-semibold text-red-300/90">
-                    {item.label}
-                  </span>
-                  {item.text}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+    <div className="rationale">
+      <div>
+        <span className="eyebrow">
+          <b>Best answer</b>
+        </span>
+        <p>{parsed.bestAnswer}</p>
+        {parsed.rule && <p className="rationale-rule">Rule · {parsed.rule}</p>}
       </div>
+      {parsed.wrongOptions.length > 0 && (
+        <div>
+          <span className="eyebrow">Why the others are wrong</span>
+          <ul>
+            {parsed.wrongOptions.map((item, index) => (
+              <li key={`${item.label}-${index}`}>
+                <span className="mono">{item.label}</span>
+                {item.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

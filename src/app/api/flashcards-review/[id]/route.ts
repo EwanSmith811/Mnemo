@@ -8,8 +8,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const body = await request.json();
-  const { rating } = body as { rating: ReviewRating };
+  const body = await request.json().catch(() => null);
+  const rating = body?.rating as ReviewRating;
 
   if (!['again', 'hard', 'good', 'easy'].includes(rating)) {
     return NextResponse.json({ error: 'Invalid rating' }, { status: 400 });
@@ -50,7 +50,10 @@ export async function PUT(
     .single();
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not save this review. Please retry.' },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json(updated);

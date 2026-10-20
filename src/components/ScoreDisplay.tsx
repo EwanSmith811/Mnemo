@@ -1,204 +1,172 @@
 'use client';
 
-import type { QuizQuestion, QuizAnswer } from '@/types';
+import { useState } from 'react';
+import type { QuizQuestion } from '@/types';
 import NclexRationaleCard from './NclexRationaleCard';
+import { TYPE_LABELS, type QuizScore } from './QuizPlayer';
 
-interface ScoreDisplayProps {
-  score: {
-    total_questions: number;
-    correct_answers: number;
-    score_percentage: number;
-    answers: QuizAnswer[];
-  };
-  questions: QuizQuestion[];
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+function verdict(pct: number) {
+  if (pct >= 90)
+    return [
+      'Excellent.',
+      'This material is solid. Space out the next quiz by a few days.',
+    ];
+  if (pct >= 80)
+    return ['Strong.', 'Close the last gaps by retrying what you missed.'];
+  if (pct >= 60)
+    return [
+      'Getting there.',
+      'Retry the misses now, then revisit their slides in the walkthrough.',
+    ];
+  return [
+    'Early days.',
+    'That’s useful information. Walk through the slides again, then retry the misses.',
+  ];
 }
 
-export default function ScoreDisplay({ score, questions }: ScoreDisplayProps) {
-  const percentage =
-    score.score_percentage ||
-    Math.round((score.correct_answers / score.total_questions) * 100);
+function yourAnswer(q: QuizQuestion, a: QuizScore['answers'][number]) {
+  if (q.question_type === 'multiple_select')
+    return (
+      a.selected_answers
+        .map((i) => `${LETTERS[i]}. ${q.choices[i]}`)
+        .join(' · ') || '—'
+    );
+  if (q.question_type === 'short_answer' || q.question_type === 'engineering')
+    return a.typed_answer || '—';
+  return a.selected_answer >= 0
+    ? `${LETTERS[a.selected_answer]}. ${q.choices[a.selected_answer]}`
+    : '—';
+}
+function rightAnswer(q: QuizQuestion) {
+  if (q.question_type === 'multiple_select')
+    return (q.correct_answers ?? [])
+      .map((i) => `${LETTERS[i]}. ${q.choices[i]}`)
+      .join(' · ');
+  if (q.question_type === 'short_answer') return q.correct_answer_text ?? '';
+  if (q.question_type === 'engineering')
+    return `${q.numeric_answer} ${q.answer_unit ?? ''}`;
+  return `${LETTERS[q.correct_answer]}. ${q.choices[q.correct_answer]}`;
+}
 
-  let gradeGradient = 'from-red-500 to-red-600';
-  let gradeGlow = 'shadow-[0_0_40px_rgba(239,68,68,0.2)]';
-  if (percentage >= 90) {
-    gradeGradient = 'from-emerald-400 to-green-500';
-    gradeGlow = 'shadow-[0_0_40px_rgba(34,197,94,0.2)]';
-  } else if (percentage >= 70) {
-    gradeGradient = 'from-blue-400 to-indigo-500';
-    gradeGlow = 'shadow-[0_0_40px_rgba(59,130,246,0.2)]';
-  } else if (percentage >= 50) {
-    gradeGradient = 'from-amber-400 to-yellow-500';
-    gradeGlow = 'shadow-[0_0_40px_rgba(245,158,11,0.2)]';
-  }
-
-  const choiceLabels = ['A', 'B', 'C', 'D'];
-
+export default function ScoreDisplay({
+  score,
+  questions,
+  onRetryMissed,
+  onNewQuiz,
+  flashcardsHref,
+}: {
+  score: QuizScore;
+  questions: QuizQuestion[];
+  onRetryMissed: () => void;
+  onNewQuiz: () => void;
+  flashcardsHref: string;
+}) {
+  const [filter, setFilter] = useState<'missed' | 'all'>('missed');
+  const pct = Math.round(score.score_percentage);
+  const missed = score.answers.filter((a) => !a.is_correct).length;
+  const [title, advice] = verdict(pct);
+  const circumference = 2 * Math.PI * 54;
+  const rows = questions
+    .map((q) => ({ q, a: score.answers.find((a) => a.question_id === q.id) }))
+    .filter(({ a }) => a && (filter === 'all' || !a.is_correct));
   return (
-    <div>
-      {/* Score summary */}
-      <div className="mb-10 text-center animate-fade-in-up">
-        <div
-          className={`mx-auto mb-4 flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br ${gradeGradient} ${gradeGlow}`}
-        >
-          <span className="text-4xl font-bold text-white">{percentage}%</span>
+    <div className="quiz-results">
+      <section className="quiz-score">
+        <svg viewBox="0 0 120 120" className="quiz-ring" aria-hidden>
+          <circle cx="60" cy="60" r="54" />
+          <circle
+            cx="60"
+            cy="60"
+            r="54"
+            className="quiz-ring-value"
+            style={{
+              strokeDasharray: circumference,
+              strokeDashoffset: circumference * (1 - pct / 100),
+            }}
+          />
+        </svg>
+        <div className="quiz-score-number">
+          <strong>{pct}</strong>
+          <span className="mono">%</span>
         </div>
-        <p className="text-lg text-zinc-300">
-          {score.correct_answers} out of {score.total_questions} correct
-        </p>
-        {percentage >= 90 && (
-          <p className="mt-1 text-sm text-emerald-400">Excellent work!</p>
-        )}
-        {percentage >= 70 && percentage < 90 && (
-          <p className="mt-1 text-sm text-blue-400">
-            Good job! Keep studying to improve.
-          </p>
-        )}
-        {percentage < 70 && (
-          <p className="mt-1 text-sm text-zinc-500">
-            Review your flashcards and try again.
-          </p>
-        )}
-      </div>
-
-      {/* Question review */}
-      <div className="mb-4 flex items-center gap-3">
-        <h3 className="text-lg font-semibold text-zinc-200">Review</h3>
-        <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
-      </div>
-      <div className="space-y-4">
-        {questions.map((question, index) => {
-          const answer = score.answers.find(
-            (a) => a.question_id === question.id,
-          );
-          const isCorrect = answer?.is_correct ?? false;
-          const qType = question.question_type || 'mcq';
-
-          return (
-            <div
-              key={question.id}
-              className={`rounded-xl glass p-4 ${
-                isCorrect ? 'border-emerald-500/20' : 'border-red-500/20'
-              }`}
+        <div className="quiz-score-copy">
+          <span className="eyebrow">
+            {score.correct_answers} of {score.total_questions} correct
+          </span>
+          <h2 className="display">{title}</h2>
+          <p>{advice}</p>
+          <div className="page-head-actions">
+            {missed > 0 && (
+              <button className="primary-button" onClick={onRetryMissed}>
+                Retry the {missed} you missed <span className="arrow">→</span>
+              </button>
+            )}
+            <button
+              className={missed ? 'secondary-button' : 'primary-button'}
+              onClick={onNewQuiz}
             >
-              <div className="mb-2 flex items-start gap-2">
-                <span
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white ${
-                    isCorrect ? 'bg-emerald-500' : 'bg-red-500'
-                  }`}
-                >
-                  {isCorrect ? '\u2713' : '\u2717'}
-                </span>
-                <div>
-                  <span className="mr-2 inline-block rounded-full bg-white/5 px-2 py-0.5 text-xs text-zinc-500 border border-white/5">
-                    {qType === 'mcq' && 'MCQ'}
-                    {qType === 'multiple_select' && 'Multi-Select'}
-                    {qType === 'short_answer' && 'Short Answer'}
-                    {qType === 'nclex' && 'NCLEX'}
-                    {qType === 'engineering' && 'Engineering'}
-                  </span>
-                  <p className="mt-1 font-medium text-zinc-200">
-                    {index + 1}. {question.question}
-                  </p>
-                </div>
-              </div>
+              New quiz
+            </button>
+            <a className="ghost-button" href={flashcardsHref}>
+              Flashcards
+            </a>
+          </div>
+        </div>
+      </section>
 
-              {/* MCQ review */}
-              {qType === 'mcq' && (
-                <>
-                  {answer && !isCorrect && (
-                    <p className="ml-7 text-sm text-red-400">
-                      Your answer: {choiceLabels[answer.selected_answer]}.{' '}
-                      {question.choices[answer.selected_answer]}
-                    </p>
-                  )}
-                  <p className="ml-7 text-sm text-emerald-400">
-                    Correct: {choiceLabels[question.correct_answer]}.{' '}
-                    {question.choices[question.correct_answer]}
-                  </p>
-                </>
-              )}
-
-              {/* Multiple select review */}
-              {qType === 'multiple_select' && (
-                <>
-                  {answer && !isCorrect && (
-                    <p className="ml-7 text-sm text-red-400">
-                      Your selections:{' '}
-                      {(answer.selected_answers || [])
-                        .map(
-                          (i) => `${choiceLabels[i]}: ${question.choices[i]}`,
-                        )
-                        .join(', ') || 'None'}
-                    </p>
-                  )}
-                  <p className="ml-7 text-sm text-emerald-400">
-                    Correct:{' '}
-                    {(question.correct_answers || [])
-                      .map((i) => `${choiceLabels[i]}: ${question.choices[i]}`)
-                      .join(', ')}
-                  </p>
-                </>
-              )}
-
-              {/* Short answer review */}
-              {qType === 'short_answer' && (
-                <>
-                  {answer && !isCorrect && (
-                    <p className="ml-7 text-sm text-red-400">
-                      Your answer: {answer.typed_answer || '(empty)'}
-                    </p>
-                  )}
-                  <p className="ml-7 text-sm text-emerald-400">
-                    Correct: {question.correct_answer_text}
-                  </p>
-                </>
-              )}
-
-              {qType === 'nclex' && (
-                <>
-                  {answer && !isCorrect && (
-                    <p className="ml-7 text-sm text-red-400">
-                      Your answer: {choiceLabels[answer.selected_answer]}.{' '}
-                      {question.choices[answer.selected_answer]}
-                    </p>
-                  )}
-                  <p className="ml-7 text-sm text-emerald-400">
-                    Correct: {choiceLabels[question.correct_answer]}.{' '}
-                    {question.choices[question.correct_answer]}
-                  </p>
-                </>
-              )}
-
-              {qType === 'engineering' && (
-                <>
-                  {answer && !isCorrect && (
-                    <p className="ml-7 text-sm text-red-400">
-                      Your answer: {answer.typed_answer || '(empty)'}
-                    </p>
-                  )}
-                  <p className="ml-7 text-sm text-emerald-400">
-                    Correct: {question.numeric_answer} {question.answer_unit}
-                  </p>
-                </>
-              )}
-
-              {question.explanation &&
-                (qType === 'nclex' ? (
-                  <div className="ml-7 mt-3">
-                    <NclexRationaleCard
-                      text={question.explanation}
-                      variant="review"
-                    />
+      <section className="quiz-review">
+        <div className="section-title">
+          <h2>Review</h2>
+          <div className="segmented">
+            <button
+              aria-pressed={filter === 'missed'}
+              onClick={() => setFilter('missed')}
+            >
+              Missed ({missed})
+            </button>
+            <button
+              aria-pressed={filter === 'all'}
+              onClick={() => setFilter('all')}
+            >
+              All ({score.total_questions})
+            </button>
+          </div>
+        </div>
+        {!rows.length && <p className="notice">Nothing missed. Nice work.</p>}
+        <ol>
+          {rows.map(({ q, a }, i) => (
+            <li
+              key={q.id}
+              className={a!.is_correct ? 'is-right' : 'is-wrong'}
+              style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
+            >
+              <span className="chip">
+                {TYPE_LABELS[q.question_type || 'mcq']}
+              </span>
+              <h3>{q.question}</h3>
+              <dl>
+                {!a!.is_correct && (
+                  <div className="is-wrong">
+                    <dt>You answered</dt>
+                    <dd>{yourAnswer(q, a!)}</dd>
                   </div>
+                )}
+                <div className="is-right">
+                  <dt>Answer</dt>
+                  <dd>{rightAnswer(q)}</dd>
+                </div>
+              </dl>
+              {q.explanation &&
+                (q.question_type === 'nclex' ? (
+                  <NclexRationaleCard text={q.explanation} />
                 ) : (
-                  <p className="ml-7 mt-1 text-sm text-zinc-500">
-                    {question.explanation}
-                  </p>
+                  <p>{q.explanation}</p>
                 ))}
-            </div>
-          );
-        })}
-      </div>
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }

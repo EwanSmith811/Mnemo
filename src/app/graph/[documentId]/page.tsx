@@ -1,14 +1,11 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PageLoading } from '@/components/ui';
 
 const GraphClient = dynamic(() => import('@/components/GraphClient'), {
   ssr: false,
-  loading: () => (
-    <div className="mx-auto max-w-4xl px-4 py-12">
-      <p className="text-zinc-500">Loading concept graph...</p>
-    </div>
-  ),
+  loading: () => <PageLoading label="Laying out the concept map" />,
 });
 
 export default function GraphPage() {

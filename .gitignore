@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 !.env.example
 /test-results/
+
+# Generated isolated PowerPoint viewer (predev/prebuild).
+/public/mnemo-slide-viewer.js
+/public/mnemo-slide-viewer.html

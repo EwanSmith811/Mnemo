@@ -1,57 +1,46 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Document, Flashcard } from '@/types';
-const TOOLS = [
-  {
-    route: 'graph',
-    title: 'Concept map',
-    description: 'See how the ideas fit together.',
-    action: 'Explore connections',
-  },
-  {
-    route: 'flashcards',
-    title: 'Flashcards',
-    description: 'Build recall with spaced repetition.',
-    action: 'Start reviewing',
-  },
-  {
-    route: 'quiz',
-    title: 'Practice quiz',
-    description: 'Test your understanding and learn from each answer.',
-    action: 'Take a quiz',
-  },
-  {
-    route: 'workbench',
-    title: 'Study workbench',
-    description: 'Work through each topic, from the brief to applied practice.',
-    action: 'Work through a topic',
-  },
-  {
-    route: 'summaries',
-    title: 'Topic summaries',
-    description: 'Get a clear explanation of the key concepts.',
-    action: 'Read the summaries',
-  },
-  {
-    route: 'chat',
-    title: 'Ask Mnemo',
-    description: 'Talk through a question using your document as context.',
-    action: 'Ask a question',
-  },
-  {
-    route: 'verbal',
-    title: 'Voice practice',
-    description: 'Explain it out loud or let Mnemo quiz you.',
-    action: 'Start a conversation',
-  },
-];
+import type { Document } from '@/types';
+import {
+  nextAction,
+  studySteps,
+  type StepId,
+  type StudyProgress,
+} from '@/lib/study-plan';
+import { BackLink, Meter, Modal, PageLoading, stagger } from '@/components/ui';
+
+const STEP_ROUTES: Record<StepId, string> = {
+  learn: 'learn',
+  flashcards: 'flashcards',
+  quiz: 'quiz',
+  workbench: 'workbench',
+};
+const MORE = [
+  [
+    'graph',
+    'Concept map',
+    'See how every idea connects, then build a memory story.',
+  ],
+  [
+    'summaries',
+    'Topic summaries',
+    'A clean, plain-language summary of each topic.',
+  ],
+  [
+    'chat',
+    'Ask Mnemo',
+    'Ask anything about the deck and get a grounded answer.',
+  ],
+  ['verbal', 'Voice practice', 'Explain it out loud, or let Mnemo quiz you.'],
+] as const;
+
 export default function DocumentPage() {
   const { documentId } = useParams<{ documentId: string }>();
   const router = useRouter();
   const [doc, setDoc] = useState<Document | null>(null);
-  const [due, setDue] = useState<number | null>(null);
+  const [progress, setProgress] = useState<StudyProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(false);
@@ -60,21 +49,16 @@ export default function DocumentPage() {
     const controller = new AbortController();
     Promise.all([
       fetch(`/api/documents/${documentId}`, { signal: controller.signal }),
-      fetch(`/api/flashcards/${documentId}`, { signal: controller.signal }),
+      fetch(`/api/documents/${documentId}/progress`, {
+        signal: controller.signal,
+      }),
     ])
-      .then(async ([docRes, cardsRes]) => {
+      .then(async ([docRes, progressRes]) => {
         const data = await docRes.json();
         if (!docRes.ok)
           throw new Error(data.error || 'Could not load the document.');
         setDoc(data);
-        if (cardsRes.ok) {
-          const cards: Flashcard[] = await cardsRes.json();
-          setDue(
-            cards.filter(
-              (c) => new Date(c.next_review_date).getTime() <= Date.now(),
-            ).length,
-          );
-        }
+        if (progressRes.ok) setProgress(await progressRes.json());
       })
       .catch((err) => {
         if (err.name !== 'AbortError') setError(err.message);
@@ -84,6 +68,7 @@ export default function DocumentPage() {
       });
     return () => controller.abort();
   }, [documentId]);
+
   async function remove() {
     setDeleting(true);
     setError('');
@@ -99,97 +84,189 @@ export default function DocumentPage() {
         err instanceof Error ? err.message : 'Could not delete the document.',
       );
       setDeleting(false);
+      setConfirm(false);
     }
   }
-  if (loading)
+
+  if (loading) return <PageLoading label="Opening your study plan" />;
+  if (!doc)
     return (
-      <main className="map-status" role="status">
-        Loading study material…
+      <main className="page is-narrow">
+        <BackLink href="/">Library</BackLink>
+        <div className="empty-state">
+          <h2>Deck not found.</h2>
+          <p>{error || 'It may have been deleted.'}</p>
+          <Link className="primary-button" href="/">
+            Back to library
+          </Link>
+        </div>
       </main>
     );
+
+  const steps = progress ? studySteps(progress) : [];
+  const next = progress ? nextAction(documentId, progress) : null;
+  const name = doc.filename.replace(/\.[^.]+$/, '');
   return (
-    <main className="document-page">
-      <Link href="/" className="back-link">
-        ← Document library
-      </Link>
+    <main className="page dashboard">
+      <BackLink href="/">Library</BackLink>
       {error && (
         <p className="inline-error" role="alert">
           {error}
         </p>
       )}
-      {doc && (
-        <>
-          <header className="document-header">
+      <header className="dashboard-head">
+        <div>
+          <span className="eyebrow rise">
+            <b>{doc.file_type.toUpperCase()}</b>
+            {doc.study_mode === 'nursing' ? 'Nursing' : 'Engineering'} · Added{' '}
+            {new Date(doc.created_at).toLocaleDateString()}
+          </span>
+          <h1 className="display rise" style={stagger(1)}>
+            {name}
+          </h1>
+        </div>
+        <dl className="dashboard-stats rise" style={stagger(2)}>
+          {progress && progress.slides.total > 0 && (
             <div>
-              <h1>{doc.filename}</h1>
-              <p>
-                {doc.file_type.toUpperCase()} <span>·</span>{' '}
-                {doc.study_mode === 'nursing' ? 'Nursing' : 'Engineering'}{' '}
-                <span>·</span> {new Date(doc.created_at).toLocaleDateString()}
-              </p>
+              <dt>Slides</dt>
+              <dd>{progress.slides.total}</dd>
             </div>
-            <button className="text-button" onClick={() => setConfirm(true)}>
-              Delete document
-            </button>
-          </header>
-          {confirm && (
-            <section className="delete-confirmation" role="alert">
-              <h2>Delete this document and its study material?</h2>
-              <p>
-                This removes its concept map, flashcards, quizzes, summaries,
-                conversations, and workbench progress. You can’t undo this.
-              </p>
-              <div>
-                <button
-                  className="secondary-button"
-                  disabled={deleting}
-                  onClick={remove}
-                >
-                  {deleting ? 'Deleting…' : 'Delete permanently'}
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={deleting}
-                  onClick={() => setConfirm(false)}
-                >
-                  Keep document
-                </button>
-              </div>
-            </section>
           )}
-          <div className="document-summary">
-            <span>
-              <strong>{doc.concept_node_count}</strong> connected concepts
-            </span>
-            <span>
-              <strong>{doc.flashcard_count}</strong> flashcards
-              {due !== null && ` · ${due} due now`}
-            </span>
-            <span>
-              <strong>{doc.quiz_question_count}</strong> practice questions
-            </span>
+          <div>
+            <dt>Concepts</dt>
+            <dd>{doc.concept_node_count}</dd>
           </div>
-          <section className="study-tools">
-            <h2>Choose how to study</h2>
-            {TOOLS.map((tool) => (
-              <Link
-                key={tool.route}
-                href={`/${tool.route}/${documentId}`}
-                className="study-tool-row"
-              >
-                <div>
-                  <h3>{tool.title}</h3>
-                  <p>{tool.description}</p>
-                </div>
-                <span>
-                  {tool.action} <span aria-hidden>↗</span>
-                </span>
-              </Link>
+          <div>
+            <dt>Cards</dt>
+            <dd>{doc.flashcard_count}</dd>
+          </div>
+          <div>
+            <dt>Questions</dt>
+            <dd>{doc.quiz_question_count}</dd>
+          </div>
+        </dl>
+      </header>
+
+      {next && (
+        <section className="next-up rise" style={stagger(3)}>
+          <div className="next-up-copy">
+            <span className="eyebrow">Next up</span>
+            <h2>{next.title}</h2>
+            <p>{next.detail}</p>
+          </div>
+          <Link className="primary-button is-large" href={next.href}>
+            {next.cta} <span className="arrow">↗</span>
+          </Link>
+          <svg className="next-up-art" viewBox="0 0 200 200" aria-hidden>
+            {[86, 64, 42].map((r, i) => (
+              <circle
+                key={r}
+                cx="100"
+                cy="100"
+                r={r}
+                style={{ animationDelay: `${i * -2}s` }}
+              />
             ))}
-          </section>
-        </>
+            <circle cx="100" cy="100" r="5" className="next-up-core" />
+          </svg>
+        </section>
       )}
-      {!doc && !error && <p className="empty-state">Document not found.</p>}
+
+      {steps.length > 0 && (
+        <section className="plan" aria-labelledby="plan-title">
+          <div className="section-title">
+            <h2 id="plan-title">Your study plan</h2>
+            <p>Understand it, recall it, test it, then use it.</p>
+          </div>
+          <ol className="plan-steps">
+            {steps.map((step, i) => {
+              const active = next?.step === step.id;
+              return (
+                <li key={step.id} className="rise" style={stagger(i + 4)}>
+                  <Link
+                    href={`/${STEP_ROUTES[step.id]}/${documentId}`}
+                    className={`plan-step ${step.done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}
+                  >
+                    <span className="plan-step-num mono">
+                      {step.done ? '✓' : `0${i + 1}`}
+                    </span>
+                    <h3>{step.title}</h3>
+                    <p>{step.detail}</p>
+                    <Meter
+                      value={step.progress}
+                      tone={step.done ? 'good' : undefined}
+                    />
+                    <span className="plan-step-state mono">
+                      {step.done
+                        ? 'Done'
+                        : active
+                          ? 'Up next'
+                          : step.progress > 0
+                            ? 'In progress'
+                            : 'Not started'}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
+
+      <section className="more-tools" aria-labelledby="more-title">
+        <div className="section-title">
+          <h2 id="more-title">More ways in</h2>
+          <p>Use these whenever something doesn’t click.</p>
+        </div>
+        <div className="more-grid">
+          {MORE.map(([route, title, text], i) => (
+            <Link
+              key={route}
+              href={`/${route}/${documentId}`}
+              className={`card more-tool more-tool-${route} rise`}
+              style={stagger(i + 8)}
+            >
+              <span className="more-tool-glyph" aria-hidden />
+              <h3>{title}</h3>
+              <p>{text}</p>
+              <span className="arrow" aria-hidden>
+                ↗
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <footer className="dashboard-foot">
+        <button className="text-button" onClick={() => setConfirm(true)}>
+          Delete this deck
+        </button>
+      </footer>
+      {confirm && (
+        <Modal
+          title="Delete this deck?"
+          description="This removes its walkthrough progress, flashcards, quizzes, summaries, conversations and workbench sessions. You can’t undo this."
+          onClose={() => setConfirm(false)}
+          busy={deleting}
+        >
+          <div className="modal-actions">
+            <button
+              className="secondary-button"
+              disabled={deleting}
+              onClick={() => setConfirm(false)}
+            >
+              Keep it
+            </button>
+            <button
+              className="danger-button"
+              disabled={deleting}
+              onClick={remove}
+            >
+              {deleting ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </main>
   );
 }

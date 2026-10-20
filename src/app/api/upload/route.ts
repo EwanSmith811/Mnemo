@@ -1,6 +1,9 @@
+import { storeDocumentSource } from '@/lib/source-preview';
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/database';
-import { extractText } from '@/lib/document-parser';
+import { extractDocument } from '@/lib/document-parser';
+import type { ExtractedSlide } from '@/lib/document-slides';
+import { storeDocumentSlides } from '@/lib/slide-store';
 import { getDocumentFileType } from '@/lib/document-formats';
 import { prepareTextForLLM } from '@/lib/text-chunker';
 import { generateFlashcardsAndQuiz } from '@/lib/generate-content';
@@ -46,12 +49,13 @@ async function prepareUpload(
         { status: 400 },
       );
     emit({ type: 'progress', stage: 'reading' });
+    const sourceBuffer = Buffer.from(await file.arrayBuffer());
     let rawText: string;
+    let slides: ExtractedSlide[] = [];
     try {
-      rawText = await extractText(
-        Buffer.from(await file.arrayBuffer()),
-        extension,
-      );
+      const extracted = await extractDocument(sourceBuffer, extension);
+      rawText = extracted.text;
+      slides = extracted.slides;
     } catch (error) {
       console.error('Document extraction failed:', error);
       return NextResponse.json(
@@ -71,15 +75,34 @@ async function prepareUpload(
         },
         { status: 400 },
       );
+    emit({
+      type: 'progress',
+      stage: 'reading',
+      preview: {
+        slides: slides.length,
+        words: rawText.split(/\s+/).filter(Boolean).length,
+        titles: [...new Set(slides.map((s) => s.title.trim()))]
+          .filter((t) => t && !/^(slide|page) \d+$/i.test(t))
+          .slice(0, 40)
+          .map((t) => t.slice(0, 80)),
+      },
+    });
     const { text, wasTruncated } = prepareTextForLLM(rawText);
     const identity = await database.uploads.claim(studyContentHash(text), mode);
-    if (identity.kind === 'existing')
+    if (identity.kind === 'existing') {
+      await storeDocumentSlides(identity.document.document_id, slides);
+      await storeDocumentSource(
+        identity.document.document_id,
+        extension,
+        sourceBuffer,
+      );
       return NextResponse.json({
         ...identity.document,
         study_mode: mode,
         was_truncated: wasTruncated,
         reused: true,
       });
+    }
     if (identity.kind === 'pending')
       return NextResponse.json(
         {
@@ -99,7 +122,12 @@ async function prepareUpload(
         return content;
       }),
       generateConceptGraph(text, file.name).then((graph) => {
-        emit({ type: 'progress', stage: 'generating', ready: 'graph' });
+        emit({
+          type: 'progress',
+          stage: 'generating',
+          ready: 'graph',
+          concepts: graph.nodes.slice(0, 60).map((n) => n.label.slice(0, 60)),
+        });
         return graph;
       }),
     ]);
@@ -121,6 +149,14 @@ async function prepareUpload(
         .single();
       if (error) throw new Error(error.message);
       const rows = [
+        await db.from('document_sources').insert({
+          document_id: document.id,
+          file_type: extension,
+          data_base64: sourceBuffer.toString('base64'),
+        }),
+        await db
+          .from('document_slides')
+          .insert(slides.map((s) => ({ ...s, document_id: document.id }))),
         await db.from('flashcards').insert(
           content.flashcards.map((f) => ({
             document_id: document.id,

@@ -1,239 +1,188 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import AddTopicSummaryDialog from '@/components/AddTopicSummaryDialog';
-import GenerateCountDialog from '@/components/GenerateCountDialog';
+import { AddDialog, GenerateDialog } from '@/components/StudyDialogs';
+import { BackLink, PageLoading } from '@/components/ui';
 import type { TopicSummary } from '@/types';
 
-function sortSummaries(items: TopicSummary[]) {
-  return [...items].sort((a, b) => a.display_order - b.display_order);
-}
+const LIMIT = 30;
+const ordered = (items: TopicSummary[]) =>
+  [...items].sort((a, b) => a.display_order - b.display_order);
 
 export default function SummariesPage() {
-  const params = useParams();
-  const documentId = params.documentId as string;
-
+  const { documentId } = useParams<{ documentId: string }>();
   const [summaries, setSummaries] = useState<TopicSummary[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const remainingSlots = Math.max(0, 30 - summaries.length);
-  const maxRequest = Math.min(10, remainingSlots);
-
-  const selectedSummary = useMemo(
-    () =>
-      summaries[Math.min(selectedIndex, Math.max(0, summaries.length - 1))] ??
-      null,
-    [selectedIndex, summaries],
-  );
+  const [selected, setSelected] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`/api/summaries/${documentId}`);
+    const controller = new AbortController();
+    fetch(`/api/summaries/${documentId}`, { signal: controller.signal })
+      .then(async (res) => {
         const data = await res.json();
-        if (!res.ok)
-          throw new Error('Could not load study material. Try again.');
-        setSummaries(Array.isArray(data) ? sortSummaries(data) : []);
-      } catch (err) {
-        console.error('Failed to load summaries:', err);
-        setSummaries([]);
-        setError('Unable to load topic summaries right now.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    load();
+        if (!res.ok) throw new Error();
+        setSummaries(Array.isArray(data) ? ordered(data) : []);
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError')
+          setError('Could not load topic summaries. Reload to try again.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [documentId]);
 
-  const handleGenerateMore = async (count: number) => {
-    if (maxRequest === 0) return;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea, [role="dialog"]'))
+        return;
+      if (e.key === 'ArrowRight')
+        setSelected((i) => Math.min(summaries.length - 1, i + 1));
+      if (e.key === 'ArrowLeft') setSelected((i) => Math.max(0, i - 1));
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [summaries.length]);
 
-    setError(null);
-
+  const slots = Math.max(0, LIMIT - summaries.length);
+  async function generate(count: number) {
     const res = await fetch(`/api/summaries/${documentId}/more`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count }),
     });
     const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to generate topic summaries');
-    }
-
-    const newSummaries: TopicSummary[] = Array.isArray(data.summaries)
+    if (!res.ok) throw new Error(data.error || 'Could not generate summaries.');
+    const added: TopicSummary[] = Array.isArray(data.summaries)
       ? data.summaries
       : [];
-    if (newSummaries.length === 0) {
-      throw new Error(
-        'The model could not find more distinct topics to add from this document.',
-      );
-    }
-
-    setSummaries((prev) => sortSummaries([...prev, ...newSummaries]));
-  };
-
-  const handleAddSummary = (summary: TopicSummary) => {
-    setError(null);
-    setSummaries((prev) => sortSummaries([...prev, summary]));
-    setSelectedIndex(summaries.length);
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="relative mx-auto mb-4 h-10 w-10">
-            <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-emerald-400" />
-          </div>
-          <p className="text-zinc-500">Loading topic summaries...</p>
-        </div>
-      </div>
-    );
+    if (!added.length)
+      throw new Error('No new, distinct topics were found in this deck.');
+    setSummaries((list) => ordered([...list, ...added]));
   }
 
+  if (loading) return <PageLoading label="Gathering the topics" />;
+  const index = Math.min(selected, Math.max(0, summaries.length - 1));
+  const topic = summaries[index];
+  const choose = (i: number) => {
+    setSelected(i);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   return (
-    <div className="min-h-screen px-6 py-12">
-      <div className="mx-auto max-w-6xl">
-        <Link
-          href={`/documents/${documentId}`}
-          className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to document
-        </Link>
-
-        <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="animate-fade-in-up">
-            <h1 className="text-2xl font-bold gradient-text-emerald">
-              Topic Summaries
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
-              Study the document by topic, then expand the deck with more
-              AI-generated summaries or add your own notes.
-            </p>
-            <div className="mt-3 glow-line-emerald w-16" />
-          </div>
-
-          <div className="w-full max-w-xl rounded-2xl glass-emerald p-5 animate-fade-in-up delay-100">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    {summaries.length} topic{summaries.length !== 1 ? 's' : ''}{' '}
-                    saved
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Up to 30 topics per document. Generate 1-10 at a time.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <GenerateCountDialog
-                    accent="emerald"
-                    buttonLabel="Generate More"
-                    confirmLabel="Generate Topics"
-                    countLabel="How many topic summaries should we add?"
-                    description="Generate another batch of topic summaries from the document without leaving this page."
-                    heading="Generate More Topics"
-                    isDisabled={remainingSlots === 0}
-                    maxCount={maxRequest}
-                    onGenerate={handleGenerateMore}
-                  />
-                  <AddTopicSummaryDialog
-                    documentId={documentId}
-                    isDisabled={remainingSlots === 0}
-                    onAdd={handleAddSummary}
-                  />
-                </div>
-              </div>
-
-              <p className="text-xs text-zinc-500">
-                {remainingSlots > 0
-                  ? `${remainingSlots} slot${remainingSlots !== 1 ? 's' : ''} remaining`
-                  : 'Topic limit reached'}
-              </p>
-
-              {error && <p className="text-sm text-red-400">{error}</p>}
-            </div>
-          </div>
+    <main className="page">
+      <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
+      <header className="page-head">
+        <div>
+          <span className="eyebrow">
+            <b>{String(summaries.length).padStart(2, '0')}</b> Topic summaries
+          </span>
+          <h1>
+            The deck, <em>in brief.</em>
+          </h1>
         </div>
-
-        {summaries.length === 0 ? (
-          <div className="rounded-2xl glass py-16 text-center">
-            <p className="text-zinc-300">No topic summaries available yet.</p>
-            <p className="mt-2 text-sm text-zinc-500">
-              Generate a few from the document or add your own summary to get
-              started.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6 animate-fade-in-up delay-150">
-            {selectedSummary && (
-              <div className="rounded-2xl glass-emerald px-6 py-6">
-                <div className="mb-5">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-400/80">
-                    Topic {selectedSummary.display_order}
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold text-zinc-100">
-                    {selectedSummary.topic_name}
-                  </h2>
-                </div>
-                <div className="space-y-4 text-sm leading-7 text-zinc-300">
-                  {selectedSummary.summary
-                    .split('\n\n')
-                    .map((paragraph, index) => (
-                      <p key={index}>{paragraph}</p>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            <div className="overflow-hidden rounded-2xl glass-emerald">
-              <div className="border-b border-white/5 px-5 py-4">
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-                  Topics
-                </p>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto">
-                {summaries.map((summary, index) => (
+        <div className="page-head-actions">
+          <GenerateDialog
+            label="More topics"
+            noun="topics"
+            description="Mnemo will summarise parts of the deck that aren’t covered yet."
+            max={Math.min(10, slots)}
+            onGenerate={generate}
+          />
+          <AddDialog<TopicSummary>
+            label="Add note"
+            title="Add your own summary"
+            description="Summarising in your own words is one of the best ways to learn."
+            endpoint={`/api/summaries/${documentId}`}
+            disabled={!slots}
+            fields={[
+              {
+                name: 'topic_name',
+                label: 'Topic',
+                placeholder: 'e.g. Frank–Starling law',
+                maxLength: 500,
+              },
+              {
+                name: 'summary',
+                label: 'Summary',
+                placeholder: 'Explain it as if to a classmate…',
+                multiline: true,
+                maxLength: 20000,
+              },
+            ]}
+            onAdd={(s) => {
+              setSummaries((list) => ordered([...list, s]));
+              setSelected(summaries.length);
+            }}
+          />
+        </div>
+      </header>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      {!topic ? (
+        <div className="empty-state">
+          <h2>No summaries yet.</h2>
+          <p>Generate a few from the deck, or write your own.</p>
+        </div>
+      ) : (
+        <div className="reader">
+          <nav className="reader-toc" aria-label="Topics">
+            <ol>
+              {summaries.map((s, i) => (
+                <li key={s.id}>
                   <button
-                    key={summary.id}
-                    onClick={() => setSelectedIndex(index)}
-                    className={`block w-full border-b border-white/5 px-5 py-4 text-left text-sm transition-all ${
-                      index === selectedIndex
-                        ? 'border-l-2 border-emerald-400 bg-emerald-500/10 font-medium text-emerald-400'
-                        : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
-                    }`}
+                    aria-current={i === index ? 'true' : undefined}
+                    onClick={() => choose(i)}
                   >
-                    <span className="block text-[11px] uppercase tracking-wide text-zinc-600">
-                      Topic {summary.display_order}
+                    <span className="mono">
+                      {String(i + 1).padStart(2, '0')}
                     </span>
-                    <span className="mt-1 block">{summary.topic_name}</span>
+                    {s.topic_name}
                   </button>
-                ))}
-              </div>
+                </li>
+              ))}
+            </ol>
+          </nav>
+          <article className="reader-article" key={topic.id}>
+            <span className="eyebrow">
+              Topic {index + 1} of {summaries.length}
+            </span>
+            <h2>{topic.topic_name}</h2>
+            <div className="reader-body">
+              {topic.summary.split(/\n{2,}/).map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+            <div className="reader-pager">
+              <button
+                className="ghost-button"
+                disabled={!index}
+                onClick={() => choose(index - 1)}
+              >
+                ← Previous
+              </button>
+              {index < summaries.length - 1 ? (
+                <button
+                  className="secondary-button"
+                  onClick={() => choose(index + 1)}
+                >
+                  {summaries[index + 1].topic_name} →
+                </button>
+              ) : (
+                <Link className="primary-button" href={`/quiz/${documentId}`}>
+                  Now test yourself <span className="arrow">↗</span>
+                </Link>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+    </main>
   );
 }

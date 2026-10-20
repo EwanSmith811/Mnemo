@@ -52,7 +52,7 @@ export default function WorkbenchHub() {
   return (
     <main className="workbench-page">
       <Link className="back-link" href={`/documents/${documentId}`}>
-        ← Back to document
+        ← Study plan
       </Link>
       <header className="workbench-heading">
         <div>

@@ -106,7 +106,7 @@ INSTRUCTIONS:
   } catch (error) {
     console.error('Chat error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Chat failed' },
+      { error: 'Mnemo could not answer right now. Please try again.' },
       { status: 500 },
     );
   }

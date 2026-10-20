@@ -1,0 +1,136 @@
+/*
+ * Mnemo design tokens.
+ * Two themes share one vocabulary: "paper" (light) and "ink" (dark).
+ * The ember accent is the only saturated color in the interface; everything
+ * else is warm neutrals, so the accent always means "act here" or "now".
+ */
+:root {
+  --font-display: var(--font-newsreader), 'Iowan Old Style', Georgia, serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', monospace;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+  --r-xl: 28px;
+
+  --nav-h: 64px;
+  --study-nav-h: 48px;
+  --page-max: 1240px;
+  --gutter: clamp(18px, 4vw, 40px);
+
+  /* paper */
+  color-scheme: light;
+  --bg: #f3efe6;
+  --bg-sunk: #ebe5d9;
+  --surface: #fbf9f4;
+  --surface-2: #f2ede3;
+  --surface-3: #e9e2d5;
+  --line: #e0d8ca;
+  --line-strong: #cbc0ad;
+  --ink: #1b1915;
+  --ink-2: #4e4941;
+  --ink-3: #847c70;
+  --accent: #dc4f1c;
+  --accent-strong: #b83f13;
+  --accent-ink: #fff8f1;
+  --accent-soft: rgb(220 79 28 / 0.1);
+  --accent-line: rgb(220 79 28 / 0.35);
+  --good: #2c7f52;
+  --good-soft: rgb(44 127 82 / 0.1);
+  --bad: #c03d35;
+  --bad-soft: rgb(192 61 53 / 0.09);
+  --warn: #a8701a;
+  --warn-soft: rgb(168 112 26 / 0.1);
+  --topic-1: #dc4f1c;
+  --topic-2: #2f6fb0;
+  --topic-3: #2c7f52;
+  --topic-4: #a8701a;
+  --topic-5: #7a55c4;
+  --topic-6: #1e8a86;
+  --shadow-1: 0 1px 0 rgb(27 25 21 / 0.04), 0 1px 3px rgb(27 25 21 / 0.06);
+  --shadow-2:
+    0 18px 40px -18px rgb(27 25 21 / 0.28), 0 2px 6px rgb(27 25 21 / 0.05);
+  --shadow-3: 0 40px 80px -30px rgb(27 25 21 / 0.4);
+  --grain: 0.28;
+  --scrim: rgb(27 25 21 / 0.42);
+}
+
+/* ink */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0f0e0c;
+    --bg-sunk: #0a0908;
+    --surface: #171512;
+    --surface-2: #1f1c18;
+    --surface-3: #29251f;
+    --line: #2a2621;
+    --line-strong: #3d3831;
+    --ink: #f2ece2;
+    --ink-2: #bdb4a5;
+    --ink-3: #847c6f;
+    --accent: #ff6b3d;
+    --accent-strong: #ff9068;
+    --accent-ink: #1b0b04;
+    --accent-soft: rgb(255 107 61 / 0.12);
+    --accent-line: rgb(255 107 61 / 0.4);
+    --good: #7ccb9b;
+    --good-soft: rgb(124 203 155 / 0.12);
+    --bad: #f2766b;
+    --bad-soft: rgb(242 118 107 / 0.12);
+    --warn: #e8b84e;
+    --warn-soft: rgb(232 184 78 / 0.12);
+    --topic-1: #ff6b3d;
+    --topic-2: #7fb2e8;
+    --topic-3: #82cf9f;
+    --topic-4: #e8b84e;
+    --topic-5: #b99cf0;
+    --topic-6: #63c7c0;
+    --shadow-1: 0 1px 0 rgb(0 0 0 / 0.3);
+    --shadow-2: 0 20px 40px -20px rgb(0 0 0 / 0.7);
+    --shadow-3: 0 40px 90px -30px rgb(0 0 0 / 0.85);
+    --grain: 0.5;
+    --scrim: rgb(5 4 3 / 0.66);
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f0e0c;
+  --bg-sunk: #0a0908;
+  --surface: #171512;
+  --surface-2: #1f1c18;
+  --surface-3: #29251f;
+  --line: #2a2621;
+  --line-strong: #3d3831;
+  --ink: #f2ece2;
+  --ink-2: #bdb4a5;
+  --ink-3: #847c6f;
+  --accent: #ff6b3d;
+  --accent-strong: #ff9068;
+  --accent-ink: #1b0b04;
+  --accent-soft: rgb(255 107 61 / 0.12);
+  --accent-line: rgb(255 107 61 / 0.4);
+  --good: #7ccb9b;
+  --good-soft: rgb(124 203 155 / 0.12);
+  --bad: #f2766b;
+  --bad-soft: rgb(242 118 107 / 0.12);
+  --warn: #e8b84e;
+  --warn-soft: rgb(232 184 78 / 0.12);
+  --topic-1: #ff6b3d;
+  --topic-2: #7fb2e8;
+  --topic-3: #82cf9f;
+  --topic-4: #e8b84e;
+  --topic-5: #b99cf0;
+  --topic-6: #63c7c0;
+  --shadow-1: 0 1px 0 rgb(0 0 0 / 0.3);
+  --shadow-2: 0 20px 40px -20px rgb(0 0 0 / 0.7);
+  --shadow-3: 0 40px 90px -30px rgb(0 0 0 / 0.85);
+  --grain: 0.5;
+  --scrim: rgb(5 4 3 / 0.66);
+}

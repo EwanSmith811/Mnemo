@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  type CSSProperties,
+} from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -11,14 +18,8 @@ import {
 } from '@/lib/graph';
 import type { ConceptGraph } from '@/types';
 
-const COLORS = [
-  '#72e3ca',
-  '#86b7ff',
-  '#c3a6ee',
-  '#e9c681',
-  '#ed9d9d',
-  '#92c6d2',
-];
+// Topic hues are theme tokens so the map follows light and dark mode.
+const COLORS = [1, 2, 3, 4, 5, 6].map((n) => `var(--topic-${n})`);
 const INITIAL_VIEW = { x: 0, y: 0, width: 1200, height: 800 };
 export default function GraphClient() {
   const { documentId } = useParams<{ documentId: string }>();
@@ -41,6 +42,35 @@ export default function GraphClient() {
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioError, setAudioError] = useState('');
   const [view, setView] = useState(INITIAL_VIEW);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const viewRef = useRef(view);
+  const flight = useRef(0);
+  const placed = useRef(false);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+  /** Ease the camera to a target view instead of jumping. */
+  const flyTo = useCallback((target: typeof view, instant = false) => {
+    cancelAnimationFrame(flight.current);
+    const from = viewRef.current;
+    if (instant || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setView(target);
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - start) / 750);
+      const e = 1 - (1 - k) ** 4;
+      setView({
+        x: from.x + (target.x - from.x) * e,
+        y: from.y + (target.y - from.y) * e,
+        width: from.width + (target.width - from.width) * e,
+        height: from.height + (target.height - from.height) * e,
+      });
+      if (k < 1) flight.current = requestAnimationFrame(step);
+    };
+    flight.current = requestAnimationFrame(step);
+  }, []);
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<{
     x: number;
@@ -87,6 +117,27 @@ export default function GraphClient() {
     () => new Map(layout?.nodes.map((n) => [n.id, n])),
     [layout],
   );
+  // Distance from the core concept drives the ripple-out entrance.
+  const depth = useMemo(() => {
+    const result = new Map<string, number>();
+    if (!layout?.nodes.length) return result;
+    const start =
+      layout.nodes.find((n) => n.id === 'central') ?? layout.nodes[0];
+    const queue = [start.id];
+    result.set(start.id, 0);
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const e of layout.edges) {
+        const next =
+          e.source === id ? e.target : e.target === id ? e.source : null;
+        if (next && !result.has(next)) {
+          result.set(next, result.get(id)! + 1);
+          queue.push(next);
+        }
+      }
+    }
+    return result;
+  }, [layout]);
   const color = (name: string) =>
     COLORS[Math.max(0, groups.indexOf(name)) % COLORS.length];
   const matches = useMemo(
@@ -109,7 +160,13 @@ export default function GraphClient() {
     graph?.edges.filter(
       (e) => e.source === selected || e.target === selected,
     ) ?? [];
-  const neighbors = new Set(connections.flatMap((e) => [e.source, e.target]));
+  // Selection wins; otherwise hovering previews a concept's neighborhood.
+  const focus = selected ?? hovered;
+  const neighbors = new Set(
+    (graph?.edges ?? [])
+      .filter((e) => e.source === focus || e.target === focus)
+      .flatMap((e) => [e.source, e.target]),
+  );
   const fit = useCallback(() => {
     if (!layout) return;
     const box = svg.current?.getBoundingClientRect();
@@ -128,15 +185,19 @@ export default function GraphClient() {
       layout.nodes.find((n) => n.id === 'central') ?? layout.nodes[0];
     const centerX = box.width < 700 ? root.x + W / 2 : layout.width / 2;
     const centerY = box.width < 700 ? root.y + H / 2 : layout.height / 2;
-    setView({
-      x: centerX - width / 2,
-      y:
-        centerY -
-        height * ((top + (box.height - top - bottom) / 2) / box.height),
-      width,
-      height,
-    });
-  }, [layout]);
+    flyTo(
+      {
+        x: centerX - width / 2,
+        y:
+          centerY -
+          height * ((top + (box.height - top - bottom) / 2) / box.height),
+        width,
+        height,
+      },
+      !placed.current,
+    );
+    placed.current = true;
+  }, [layout, flyTo]);
   useEffect(() => {
     const update = () => {
       if (page.current)
@@ -164,6 +225,7 @@ export default function GraphClient() {
     if (!element) return;
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
+      cancelAnimationFrame(flight.current);
       const box = element.getBoundingClientRect();
       const px = (event.clientX - box.left) / box.width,
         py = (event.clientY - box.top) / box.height;
@@ -202,15 +264,14 @@ export default function GraphClient() {
     return () => observer.disconnect();
   }, [fit, loading, listView]);
   function zoom(factor: number) {
-    setView((v) => {
-      const width = Math.max(300, Math.min(12000, v.width * factor));
-      const height = (v.height * width) / v.width;
-      return {
-        x: v.x + (v.width - width) / 2,
-        y: v.y + (v.height - height) / 2,
-        width,
-        height,
-      };
+    const v = viewRef.current;
+    const width = Math.max(300, Math.min(12000, v.width * factor));
+    const height = (v.height * width) / v.width;
+    flyTo({
+      x: v.x + (v.width - width) / 2,
+      y: v.y + (v.height - height) / 2,
+      width,
+      height,
     });
   }
   function focusNode(id: string) {
@@ -218,21 +279,25 @@ export default function GraphClient() {
     setInspectorOpen(true);
     const node = positions.get(id),
       box = svg.current?.getBoundingClientRect();
+    const v = viewRef.current;
     if (node)
-      setView((v) => {
-        const width = Math.min(v.width, box && box.width <= 760 ? 800 : 1400),
-          height = (width * v.height) / v.width;
-        const targetX =
-          box && box.width > 760
-            ? Math.max(0.28, (box.width - 380) / box.width / 2)
-            : 0.5;
-        return {
-          x: node.x + W / 2 - width * targetX,
-          y: node.y + H / 2 - height * (box && box.width <= 760 ? 0.32 : 0.52),
-          width,
-          height,
-        };
-      });
+      flyTo(
+        (() => {
+          const width = Math.min(v.width, box && box.width <= 760 ? 800 : 1400),
+            height = (width * v.height) / v.width;
+          const targetX =
+            box && box.width > 760
+              ? Math.max(0.28, (box.width - 380) / box.width / 2)
+              : 0.5;
+          return {
+            x: node.x + W / 2 - width * targetX,
+            y:
+              node.y + H / 2 - height * (box && box.width <= 760 ? 0.32 : 0.52),
+            width,
+            height,
+          };
+        })(),
+      );
   }
   function focusTopic(topic: string) {
     setGroup(topic);
@@ -243,15 +308,14 @@ export default function GraphClient() {
       fit();
       return;
     }
-    setView((v) => {
-      const ratio = v.width / v.height;
-      const width = Math.max(region.width + 80, (region.height + 80) * ratio);
-      return {
-        x: region.x + region.width / 2 - width / 2,
-        y: region.y + region.height / 2 - width / ratio / 2,
-        width,
-        height: width / ratio,
-      };
+    const v = viewRef.current;
+    const ratio = v.width / v.height;
+    const width = Math.max(region.width + 80, (region.height + 80) * ratio);
+    flyTo({
+      x: region.x + region.width / 2 - width / 2,
+      y: region.y + region.height / 2 - width / ratio / 2,
+      width,
+      height: width / ratio,
     });
   }
   useEffect(
@@ -306,6 +370,14 @@ export default function GraphClient() {
       setStoryLoading(false);
     }
   }
+  const paused = !motion || hidden;
+  useEffect(() => {
+    const element = svg.current;
+    if (!element) return;
+    if (paused || matchMedia('(prefers-reduced-motion: reduce)').matches)
+      element.pauseAnimations();
+    else element.unpauseAnimations();
+  }, [paused, loading, listView]);
   const root =
     layout?.nodes.find((n) => n.id === 'central') ?? layout?.nodes[0];
   const showInspector = inspectorOpen && (!!current || storyNodes.length > 0);
@@ -488,6 +560,7 @@ export default function GraphClient() {
                       if (e.key === '0') fit();
                     }}
                     onPointerDown={(e) => {
+                      cancelAnimationFrame(flight.current);
                       if (
                         (e.target as Element).closest('[data-node]') &&
                         !pointers.current.size
@@ -594,17 +667,57 @@ export default function GraphClient() {
                         height="96"
                         patternUnits="userSpaceOnUse"
                       >
-                        <circle cx="12" cy="12" r=".9" fill="#47766b" />
-                        <circle cx="58" cy="70" r=".55" fill="#47766b" />
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r=".9"
+                          style={{ fill: 'var(--ink-3)' }}
+                        />
+                        <circle
+                          cx="58"
+                          cy="70"
+                          r=".55"
+                          style={{ fill: 'var(--ink-3)' }}
+                        />
                       </pattern>
                       <radialGradient id="graph-root-light">
                         <stop
                           offset="0"
-                          stopColor="#70e8c1"
-                          stopOpacity=".13"
+                          style={{
+                            stopColor: 'var(--accent)',
+                            stopOpacity: 0.12,
+                          }}
                         />
-                        <stop offset="1" stopColor="#70e8c1" stopOpacity="0" />
+                        <stop
+                          offset="1"
+                          style={{ stopColor: 'var(--accent)', stopOpacity: 0 }}
+                        />
                       </radialGradient>
+                      {groups.map((g, i) => (
+                        <radialGradient key={g} id={`graph-nebula-${i}`}>
+                          <stop
+                            offset="0"
+                            style={{ stopColor: color(g), stopOpacity: 0.55 }}
+                          />
+                          <stop
+                            offset=".55"
+                            style={{ stopColor: color(g), stopOpacity: 0.16 }}
+                          />
+                          <stop
+                            offset="1"
+                            style={{ stopColor: color(g), stopOpacity: 0 }}
+                          />
+                        </radialGradient>
+                      ))}
+                      <filter
+                        id="graph-glow"
+                        x="-50%"
+                        y="-50%"
+                        width="200%"
+                        height="200%"
+                      >
+                        <feGaussianBlur stdDeviation="3" />
+                      </filter>
                       <marker
                         id="graph-arrow"
                         viewBox="0 0 10 10"
@@ -617,7 +730,7 @@ export default function GraphClient() {
                         <path
                           d="m2 2 6 3-6 3"
                           fill="none"
-                          stroke="#92edcc"
+                          style={{ stroke: 'var(--accent)' }}
                           strokeWidth="1.2"
                         />
                       </marker>
@@ -630,6 +743,26 @@ export default function GraphClient() {
                       fill="url(#graph-stars)"
                       opacity=".32"
                     />
+                    <g className="graph-nebulae" aria-hidden="true">
+                      {layout?.regions.map((r) => {
+                        const i = groups.indexOf(r.group);
+                        const dim =
+                          (group !== 'All topics' && group !== r.group) ||
+                          (!!focus && positions.get(focus)?.group !== r.group);
+                        return (
+                          <ellipse
+                            key={r.group}
+                            cx={r.x + r.width / 2}
+                            cy={r.y + r.height / 2}
+                            rx={r.width / 2 + 170}
+                            ry={r.height / 2 + 140}
+                            fill={`url(#graph-nebula-${i})`}
+                            className={dim ? 'is-dim' : ''}
+                            style={{ '--i': i } as CSSProperties}
+                          />
+                        );
+                      })}
+                    </g>
                     {root && (
                       <g className="graph-root-field" aria-hidden="true">
                         <circle
@@ -650,8 +783,8 @@ export default function GraphClient() {
                             rx="157"
                             ry="110"
                             fill="none"
-                            stroke="#92edcc"
-                            strokeOpacity=".25"
+                            style={{ stroke: 'var(--accent)' }}
+                            strokeOpacity=".3"
                             strokeDasharray="120 30 2 30"
                             strokeWidth=".8"
                           />
@@ -659,7 +792,7 @@ export default function GraphClient() {
                             cx={root.x + W / 2 + 157}
                             cy={root.y + H / 2}
                             r="3"
-                            fill="#92edcc"
+                            style={{ fill: 'var(--accent)' }}
                           />
                         </g>
                       </g>
@@ -672,12 +805,19 @@ export default function GraphClient() {
                           e.source === selected ||
                           e.target === selected,
                       )
-                      .map((e) => {
+                      .map((e, index) => {
                         const from = positions.get(e.source),
                           to = positions.get(e.target);
                         if (!from || !to) return null;
-                        const active =
-                          e.source === selected || e.target === selected;
+                        const active = e.source === focus || e.target === focus;
+                        const gradient = `graph-edge-${index}`;
+                        const delay =
+                          Math.min(
+                            depth.get(e.source) ?? 0,
+                            depth.get(e.target) ?? 0,
+                          ) *
+                            120 +
+                          250;
                         const dx = to.x - from.x,
                           dy = to.y - from.y;
                         const distance = Math.max(1, Math.hypot(dx, dy));
@@ -700,7 +840,7 @@ export default function GraphClient() {
                               active ? 'graph-edge is-active' : 'graph-edge'
                             }
                             opacity={
-                              selected && !active
+                              focus && !active
                                 ? 0.13
                                 : !matches.has(e.source) ||
                                     !matches.has(e.target)
@@ -712,24 +852,79 @@ export default function GraphClient() {
                                       : 0.3
                             }
                           >
+                            <linearGradient
+                              id={gradient}
+                              gradientUnits="userSpaceOnUse"
+                              x1={x1}
+                              y1={y1}
+                              x2={x2}
+                              y2={y2}
+                            >
+                              <stop
+                                offset="0"
+                                style={{ stopColor: color(from.group) }}
+                              />
+                              <stop
+                                offset="1"
+                                style={{ stopColor: color(to.group) }}
+                              />
+                            </linearGradient>
+                            {active && (
+                              <path
+                                d={path}
+                                fill="none"
+                                className="graph-edge-glow"
+                                style={{ stroke: 'var(--accent)' }}
+                                strokeWidth="6"
+                                filter="url(#graph-glow)"
+                              />
+                            )}
                             <path
                               d={path}
                               fill="none"
-                              stroke={active ? '#92edcc' : color(from.group)}
-                              strokeWidth={active ? 1.8 : 1}
+                              pathLength="1"
+                              className={`graph-edge-line ${e.isTree || active ? 'draws' : 'is-cross'}`}
+                              style={{
+                                stroke: active
+                                  ? 'var(--accent)'
+                                  : `url(#${gradient})`,
+                                animationDelay: `${delay}ms`,
+                              }}
+                              strokeWidth={active ? 2 : e.isTree ? 1.4 : 1}
+                              strokeDasharray={
+                                e.isTree || active ? undefined : '.008 .012'
+                              }
                               markerEnd={
                                 active ? 'url(#graph-arrow)' : undefined
                               }
                             >
                               <title>{e.relationship}</title>
                             </path>
+                            {e.isTree && (
+                              <circle
+                                r={active ? 3 : 2.2}
+                                className="graph-signal"
+                                style={{
+                                  fill: active
+                                    ? 'var(--accent)'
+                                    : color(to.group),
+                                }}
+                              >
+                                <animateMotion
+                                  dur={`${3.2 + (index % 5) * 0.7}s`}
+                                  begin={`${-((index * 0.83) % 4)}s`}
+                                  repeatCount="indefinite"
+                                  path={path}
+                                />
+                              </circle>
+                            )}
                             {active && (
                               <path
                                 className="graph-edge-flow"
                                 d={path}
                                 pathLength="1"
                                 fill="none"
-                                stroke="#d2ffef"
+                                style={{ stroke: 'var(--accent-strong)' }}
                                 strokeWidth="3"
                                 strokeDasharray=".018 .982"
                               />
@@ -748,11 +943,12 @@ export default function GraphClient() {
                           overflow: 'visible',
                           opacity:
                             !matches.has(n.id) ||
-                            (selected &&
-                              !neighbors.has(n.id) &&
-                              selected !== n.id)
-                              ? 0.18
+                            (focus && !neighbors.has(n.id) && focus !== n.id)
+                              ? selected
+                                ? 0.18
+                                : 0.35
                               : 1,
+                          transition: 'opacity .3s',
                         }}
                       >
                         <button
@@ -763,7 +959,8 @@ export default function GraphClient() {
                           style={
                             {
                               '--node-color': color(n.group),
-                            } as React.CSSProperties
+                              '--depth': depth.get(n.id) ?? 0,
+                            } as CSSProperties
                           }
                           onClick={() =>
                             selected === n.id
@@ -771,6 +968,10 @@ export default function GraphClient() {
                               : focusNode(n.id)
                           }
                           aria-pressed={selected === n.id}
+                          onPointerEnter={(e) =>
+                            e.pointerType === 'mouse' && setHovered(n.id)
+                          }
+                          onPointerLeave={() => setHovered(null)}
                         >
                           <span>{n.group}</span>
                           <strong>{n.label}</strong>

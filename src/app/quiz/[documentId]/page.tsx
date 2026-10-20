@@ -1,271 +1,284 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import QuizPlayer from '@/components/QuizPlayer';
-import QuizSettingsPanel from '@/components/QuizSettings';
+import QuizPlayer, {
+  TYPE_LABELS,
+  type QuizScore,
+} from '@/components/QuizPlayer';
 import ScoreDisplay from '@/components/ScoreDisplay';
-import type {
-  QuizQuestion,
-  QuestionType,
-  QuizSettings,
-  QuizAnswer,
-} from '@/types';
+import { BackLink, Icon, PageLoading } from '@/components/ui';
+import type { QuizQuestion, QuestionType } from '@/types';
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const shuffled = [...arr];
-  for (let i = shuffled.length - 1; i > 0; i--) {
+const LIMIT = 100;
+const LENGTHS = [5, 10, 15, 20];
+function shuffle<T>(items: T[]) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    [copy[i], copy[j]] = [copy[j], copy[i]];
   }
-  return shuffled;
+  return copy;
+}
+interface LastAttempt {
+  score: number;
+  missed: string[];
 }
 
 export default function QuizPage() {
-  const params = useParams();
-  const documentId = params.documentId as string;
-
-  const [loadError, setLoadError] = useState('');
-  const [allQuestions, setAllQuestions] = useState<QuizQuestion[]>([]);
-  const [filteredQuestions, setFilteredQuestions] = useState<QuizQuestion[]>(
-    [],
+  const { documentId } = useParams<{ documentId: string }>();
+  const [pool, setPool] = useState<QuizQuestion[]>([]);
+  const [last, setLast] = useState<LastAttempt | null>(null);
+  const [phase, setPhase] = useState<'loading' | 'setup' | 'quiz' | 'results'>(
+    'loading',
   );
-  const [quizKey, setQuizKey] = useState(0);
-  const [phase, setPhase] = useState<
-    'loading' | 'settings' | 'quiz' | 'results'
-  >('loading');
-  const [completedScore, setCompletedScore] = useState<{
-    total_questions: number;
-    correct_answers: number;
-    score_percentage: number;
-    answers: QuizAnswer[];
-  } | null>(null);
-  const [completedQuestions, setCompletedQuestions] = useState<QuizQuestion[]>(
-    [],
-  );
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isExhausted, setIsExhausted] = useState(false);
+  const [error, setError] = useState('');
+  const [types, setTypes] = useState<Set<QuestionType> | null>(null);
+  const [length, setLength] = useState(10);
+  const [round, setRound] = useState<QuizQuestion[]>([]);
+  const [roundKey, setRoundKey] = useState(0);
+  const [score, setScore] = useState<QuizScore | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [exhausted, setExhausted] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`/api/quiz/${documentId}`);
-        const data: QuizQuestion[] = await res.json();
-        if (!res.ok)
-          throw new Error('Could not load study material. Try again.');
-        setAllQuestions(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error('Failed to load quiz:', err);
-        setLoadError(
-          'Could not load your quiz. Check your connection and reload this page.',
-        );
-        setAllQuestions([]);
-      } finally {
-        setPhase('settings');
-      }
-    }
-    load();
+    const controller = new AbortController();
+    Promise.all([
+      fetch(`/api/quiz/${documentId}`, { signal: controller.signal }),
+      fetch(`/api/quiz/${documentId}/attempts`, { signal: controller.signal }),
+    ])
+      .then(async ([questions, attempts]) => {
+        const data = await questions.json();
+        if (!questions.ok) throw new Error();
+        setPool(Array.isArray(data) ? data : []);
+        if (attempts.ok) setLast(await attempts.json());
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError')
+          setError('Could not load your questions. Reload to try again.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPhase('setup');
+      });
+    return () => controller.abort();
   }, [documentId]);
 
-  const totalQuestionsByType = useMemo(() => {
-    const counts: Record<QuestionType, number> = {
-      mcq: 0,
-      multiple_select: 0,
-      short_answer: 0,
-      nclex: 0,
-      engineering: 0,
-    };
-    allQuestions.forEach((q) => {
-      const type = q.question_type || 'mcq';
-      counts[type] = (counts[type] || 0) + 1;
-    });
-    return counts;
-  }, [allQuestions]);
+  const counts = useMemo(() => {
+    const c = new Map<QuestionType, number>();
+    for (const q of pool)
+      c.set(
+        q.question_type || 'mcq',
+        (c.get(q.question_type || 'mcq') ?? 0) + 1,
+      );
+    return c;
+  }, [pool]);
+  const chosen = types ?? new Set(counts.keys());
+  const eligible = pool.filter((q) => chosen.has(q.question_type || 'mcq'));
+  const missedQuestions = pool.filter((q) => last?.missed.includes(q.id));
 
-  const handleStartQuiz = (settings: QuizSettings) => {
-    const { questionCount, questionTypes } = settings;
-    const typeSet = new Set(questionTypes);
-
-    const eligible = allQuestions.filter((q) =>
-      typeSet.has(q.question_type || 'mcq'),
-    );
-    const shuffled = shuffleArray(eligible);
-    const selected = shuffled.slice(0, questionCount);
-
-    setFilteredQuestions(selected);
-    setIsExhausted(false);
-    setQuizKey((k) => k + 1);
+  function play(questions: QuizQuestion[]) {
+    setRound(questions);
+    setRoundKey((k) => k + 1);
+    setScore(null);
     setPhase('quiz');
-  };
-
-  const handleQuizComplete = (
-    score: {
-      total_questions: number;
-      correct_answers: number;
-      score_percentage: number;
-      answers: QuizAnswer[];
-    },
-    questions: QuizQuestion[],
-  ) => {
-    setCompletedScore(score);
-    setCompletedQuestions(questions);
-    setPhase('results');
-  };
-
-  const handleAddMore = async () => {
-    // Check if already at hard limit
-    if (allQuestions.length >= 100) {
-      setIsExhausted(true);
-      return;
-    }
-
-    setIsLoadingMore(true);
+    window.scrollTo({ top: 0 });
+  }
+  async function generateMore() {
+    setGenerating(true);
+    setError('');
     try {
       const res = await fetch(`/api/quiz/${documentId}/more`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          existingQuestions: allQuestions.map((q) => q.question),
+          existingQuestions: pool.map((q) => q.question),
           questionCount: 10,
         }),
       });
       const data = await res.json();
-      if (data.exhausted || data.limitReached || !data.questions?.length) {
-        setIsExhausted(true);
-      } else {
-        const newQs: QuizQuestion[] = data.questions;
-        // Merge into allQuestions so the settings panel shows the updated count
-        setAllQuestions((prev) => [...prev, ...newQs]);
-        setIsExhausted(false);
-      }
-    } catch {
-      setIsExhausted(true);
+      if (!res.ok)
+        throw new Error(data.error || 'Could not generate questions.');
+      if (data.exhausted || data.limitReached || !data.questions?.length)
+        setExhausted(true);
+      else setPool((p) => [...p, ...data.questions]);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
-      setIsLoadingMore(false);
+      setGenerating(false);
     }
-  };
-
-  if (phase === 'loading') {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="relative mx-auto mb-4 h-10 w-10">
-            <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-purple-400" />
-          </div>
-          <p className="text-zinc-500">Loading quiz...</p>
-        </div>
-      </div>
-    );
   }
 
+  if (phase === 'loading')
+    return <PageLoading label="Drawing your questions" />;
   return (
-    <div className="min-h-screen px-6 py-12">
-      {loadError && (
-        <p className="inline-error" role="alert">
-          {loadError}
-        </p>
+    <main className="page is-reading">
+      <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
+      {phase === 'quiz' && (
+        <QuizPlayer
+          key={roundKey}
+          questions={round}
+          documentId={documentId}
+          onQuit={() => setPhase('setup')}
+          onComplete={(result) => {
+            setScore(result);
+            setLast({
+              score: Math.round(result.score_percentage),
+              missed: result.answers
+                .filter((a) => !a.is_correct)
+                .map((a) => a.question_id),
+            });
+            setPhase('results');
+            window.scrollTo({ top: 0 });
+          }}
+        />
       )}
-      <div className="mx-auto max-w-3xl">
-        <Link
-          href={`/documents/${documentId}`}
-          className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to document
-        </Link>
-
-        <div className="mb-8 animate-fade-in-up">
-          <h1 className="text-2xl font-bold gradient-text-purple">Quiz</h1>
-          <div className="mt-2 glow-line-purple w-16" />
-        </div>
-
-        {phase === 'settings' && (
-          <div className="animate-fade-in-up delay-100 space-y-4">
-            <QuizSettingsPanel
-              totalQuestionsByType={totalQuestionsByType}
-              onStart={handleStartQuiz}
-            />
-            <div className="rounded-2xl glass p-5">
-              <div className="flex items-center justify-between mb-1">
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    Question pool
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    {allQuestions.length} question
-                    {allQuestions.length !== 1 ? 's' : ''} total — generate more
-                    to expand variety
-                  </p>
-                </div>
-                {!isExhausted ? (
-                  <button
-                    onClick={handleAddMore}
-                    disabled={isLoadingMore}
-                    className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-[0_0_16px_rgba(139,92,246,0.3)] disabled:opacity-50 shrink-0"
-                  >
-                    {isLoadingMore ? (
-                      <span className="flex items-center gap-2">
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        Generating...
-                      </span>
-                    ) : (
-                      '+ Generate more'
-                    )}
-                  </button>
-                ) : (
-                  <span className="text-xs text-zinc-500">
-                    {allQuestions.length >= 100
-                      ? 'Question limit (100) reached'
-                      : 'Pool exhausted'}
-                  </span>
-                )}
-              </div>
+      {phase === 'results' && score && (
+        <ScoreDisplay
+          score={score}
+          questions={round}
+          flashcardsHref={`/flashcards/${documentId}`}
+          onNewQuiz={() => setPhase('setup')}
+          onRetryMissed={() =>
+            play(
+              shuffle(
+                round.filter((q) =>
+                  score.answers.some(
+                    (a) => a.question_id === q.id && !a.is_correct,
+                  ),
+                ),
+              ),
+            )
+          }
+        />
+      )}
+      {phase === 'setup' && (
+        <>
+          <header className="page-head">
+            <div>
+              <span className="eyebrow">
+                <b>03</b> Quiz
+              </span>
+              <h1>
+                Find out what <em>stuck.</em>
+              </h1>
+              <p className="lede">
+                Pulling an answer out of memory is what makes it last. Every
+                question comes with an explanation.
+              </p>
             </div>
-          </div>
-        )}
-
-        {phase === 'quiz' && (
-          <div className="animate-fade-in">
-            <QuizPlayer
-              key={quizKey}
-              questions={filteredQuestions}
-              documentId={documentId}
-              onQuizComplete={handleQuizComplete}
-            />
-          </div>
-        )}
-
-        {phase === 'results' && completedScore && (
-          <div className="animate-fade-in-up space-y-4">
-            <ScoreDisplay
-              score={completedScore}
-              questions={completedQuestions}
-            />
-            <div className="mt-6">
+          </header>
+          {error && (
+            <p className="inline-error" role="alert">
+              {error}
+            </p>
+          )}
+          {!pool.length ? (
+            <div className="empty-state">
+              <h2>No questions yet.</h2>
+              <p>Generate a set from the deck to get started.</p>
               <button
-                onClick={() => setPhase('settings')}
-                className="w-full rounded-xl glass px-6 py-3 text-sm font-medium text-zinc-400 transition-all glass-hover"
+                className="primary-button"
+                disabled={generating}
+                onClick={generateMore}
               >
-                Start new quiz
+                {generating ? 'Generating…' : 'Generate 10 questions'}
               </button>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          ) : (
+            <div className="quiz-setup">
+              {missedQuestions.length > 0 && (
+                <button
+                  className="quiz-retry card"
+                  onClick={() => play(shuffle(missedQuestions))}
+                >
+                  <span className="eyebrow">
+                    <b>●</b> From your last quiz · {last!.score}%
+                  </span>
+                  <strong>
+                    Retry the {missedQuestions.length} question
+                    {missedQuestions.length === 1 ? '' : 's'} you missed
+                  </strong>
+                  <span className="arrow" aria-hidden>
+                    →
+                  </span>
+                </button>
+              )}
+              <section className="quiz-builder card">
+                <div className="quiz-builder-row">
+                  <h2>Question types</h2>
+                  <div className="quiz-types">
+                    {[...counts].map(([type, n]) => (
+                      <label key={type} className="quiz-type">
+                        <input
+                          type="checkbox"
+                          checked={chosen.has(type)}
+                          onChange={() => {
+                            const next = new Set(chosen);
+                            if (next.has(type) && next.size > 1)
+                              next.delete(type);
+                            else next.add(type);
+                            setTypes(next);
+                          }}
+                        />
+                        <Icon name="check" size={14} />
+                        {TYPE_LABELS[type]}
+                        <span className="mono">{n}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="quiz-builder-row">
+                  <h2>Length</h2>
+                  <div className="segmented">
+                    {LENGTHS.filter(
+                      (n, i) => n <= eligible.length || i === 0,
+                    ).map((n) => (
+                      <button
+                        key={n}
+                        aria-pressed={
+                          Math.min(length, eligible.length) ===
+                          Math.min(n, eligible.length)
+                        }
+                        onClick={() => setLength(n)}
+                      >
+                        {Math.min(n, eligible.length)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="quiz-builder-foot">
+                  <button
+                    className="primary-button is-large"
+                    disabled={!eligible.length}
+                    onClick={() => play(shuffle(eligible).slice(0, length))}
+                  >
+                    Start {Math.min(length, eligible.length)} questions{' '}
+                    <span className="arrow">→</span>
+                  </button>
+                  <span className="muted">
+                    {pool.length} in the pool
+                    {pool.length < LIMIT && !exhausted && (
+                      <>
+                        {' · '}
+                        <button
+                          className="text-button"
+                          disabled={generating}
+                          onClick={generateMore}
+                        >
+                          {generating
+                            ? 'Generating 10 more…'
+                            : 'Generate 10 more'}
+                        </button>
+                      </>
+                    )}
+                    {exhausted && ' · no new questions left to generate'}
+                  </span>
+                </div>
+              </section>
+            </div>
+          )}
+        </>
+      )}
+    </main>
   );
 }

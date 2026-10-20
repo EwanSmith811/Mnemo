@@ -6,8 +6,20 @@ export type UploadResult = {
   topic_summary_count: number;
   concept_node_count: number;
 };
+/** Real excerpts from the deck, streamed so the loading screen shows actual content. */
+export type UploadPreview = {
+  slides: number;
+  words: number;
+  titles: string[];
+};
 export type UploadEvent =
-  | { type: 'progress'; stage: UploadStage; ready?: 'materials' | 'graph' }
+  | {
+      type: 'progress';
+      stage: UploadStage;
+      ready?: 'materials' | 'graph';
+      preview?: UploadPreview;
+      concepts?: string[];
+    }
   | ({ type: 'complete' } & UploadResult)
   | { type: 'error'; message: string }
   | { type: 'heartbeat' };

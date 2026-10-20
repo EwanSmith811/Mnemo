@@ -1,83 +1,212 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useModalFocus } from '@/lib/use-modal-focus';
-import type { UploadStage } from '@/lib/upload-progress';
+import type {
+  UploadPreview,
+  UploadResult,
+  UploadStage,
+} from '@/lib/upload-progress';
+import { Constellation, type Phase } from './generation/constellation';
+import { LogoMark } from './Logo';
 
-const stages = [
+export interface GenerationState {
+  stage: UploadStage;
+  ready: { graph: boolean; materials: boolean };
+  preview: UploadPreview | null;
+  concepts: string[];
+  result: UploadResult | null;
+}
+
+const STAGES = [
   {
     id: 'uploading',
-    label: 'Upload document',
-    title: 'Knowledge, incoming.',
-    detail: 'Sending your source material to Mnemo.',
+    label: 'Upload',
+    title: ['Taking', 'the', 'deck', 'in.'],
+    detail: 'Sending your file to Mnemo.',
   },
   {
     id: 'reading',
-    label: 'Read the source',
-    title: 'Finding the signal.',
-    detail: 'Extracting the words, ideas, and context from your document.',
+    label: 'Read',
+    title: ['Reading', 'every', 'slide.'],
+    detail: 'Extracting text, titles and speaker notes, page by page.',
   },
   {
     id: 'generating',
-    label: 'Build study tools',
-    title: 'Making connections.',
+    label: 'Build',
+    title: ['Building', 'your', 'study', 'set.'],
     detail:
-      'Turning your source into concepts, flashcards, practice questions, and summaries.',
+      'Mapping concepts and writing flashcards, practice questions and topic summaries.',
   },
   {
     id: 'saving',
-    label: 'Save your material',
-    title: 'Everything in place.',
-    detail: 'Saving your study tools and getting your dashboard ready.',
+    label: 'Save',
+    title: ['Putting', 'it', 'all', 'in', 'place.'],
+    detail: 'Saving everything and preparing the slide-by-slide walkthrough.',
   },
 ] as const;
-const points = Array.from({ length: 18 }, (_, i) => {
-  const angle = ((i % 6) * Math.PI) / 3 + Math.floor(i / 6) * 0.29;
-  const radius = 105 + Math.floor(i / 6) * 62;
-  return {
-    x: 300 + Math.cos(angle) * radius,
-    y: 300 + Math.sin(angle) * radius,
-  };
-});
+const WORK = [
+  'Pulling out the key terms worth a flashcard',
+  'Writing practice questions with explanations',
+  'Summarising each topic in plain language',
+  'Mapping which ideas depend on which',
+  'Checking the output before anything is saved',
+];
+const pad = (n: number) => String(n).padStart(2, '0');
+
+function CountUp({ value }: { value: number | null }) {
+  const [shown, setShown] = useState(0);
+  const current = useRef(0);
+  useEffect(() => {
+    if (value === null) return;
+    const from = current.current;
+    const start = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const k = Math.min(1, (now - start) / 1100);
+      const eased = 1 - (1 - k) ** 4;
+      current.current = Math.round(from + (value - from) * eased);
+      setShown(current.current);
+      if (k < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return <>{value === null ? '—' : shown.toLocaleString()}</>;
+}
 
 export default function GenerationScreen({
   filename,
-  stage,
-  ready,
+  state,
   error,
-  complete,
   onRetry,
   onBack,
 }: {
   filename: string;
-  stage: UploadStage;
-  ready: { graph: boolean; materials: boolean };
+  state: GenerationState;
   error: string;
-  complete: boolean;
   onRetry: () => void;
   onBack: () => void;
 }) {
+  const { stage, ready, preview, concepts, result } = state;
+  const complete = !!result;
   const [paused, setPaused] = useState(false);
-  const [hidden, setHidden] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [log, setLog] = useState<{ id: number; text: string; tone?: string }[]>(
+    [],
+  );
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const engine = useRef<Constellation | null>(null);
+  const logId = useRef(0);
   const panel = useModalFocus(true, () => {});
+  // Focus the dialog itself rather than its first button.
+  useEffect(() => panel.current?.focus(), [panel]);
+  const phase: Phase = error ? 'error' : complete ? 'complete' : stage;
+  const index = STAGES.findIndex((s) => s.id === stage);
+  const current = STAGES[index];
+
+  const push = useCallback(
+    (text: string, tone?: string) =>
+      setLog((l) => [{ id: ++logId.current, text, tone }, ...l].slice(0, 7)),
+    [],
+  );
+
   useEffect(() => {
     const started = Date.now();
-    const tick = setInterval(
+    const timer = setInterval(
       () => setSeconds(Math.floor((Date.now() - started) / 1000)),
       1000,
     );
-    const visibility = () => setHidden(document.hidden);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Engine lifecycle.
+  useEffect(() => {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const instance = new Constellation(canvas.current!, still);
+    engine.current = instance;
+    const resize = () => instance.resize();
+    const move = (e: PointerEvent) => instance.point(e.clientX, e.clientY);
+    const visibility = () => instance.setPaused(document.hidden);
+    window.addEventListener('resize', resize);
+    window.addEventListener('pointermove', move);
     document.addEventListener('visibilitychange', visibility);
     return () => {
-      clearInterval(tick);
+      instance.destroy();
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('pointermove', move);
       document.removeEventListener('visibilitychange', visibility);
     };
   }, []);
-  const index = stages.findIndex((s) => s.id === stage);
-  const current = stages[index];
+  useEffect(() => engine.current?.setPhase(phase), [phase]);
+  useEffect(() => engine.current?.setPaused(paused), [paused]);
+  useEffect(() => {
+    engine.current?.setLabels(
+      concepts.length ? concepts : (preview?.titles ?? []),
+    );
+  }, [concepts, preview]);
+
+  // Narrate real progress: slide titles while reading, concepts once mapped.
+  useEffect(() => {
+    const titles = preview?.titles ?? [];
+    const instance = engine.current;
+    if (!instance) return;
+    instance.onSlide = (i) => {
+      if (stage !== 'reading' || !titles.length) return;
+      push(
+        `Slide ${pad((i % titles.length) + 1)} — ${titles[i % titles.length]}`,
+      );
+    };
+    return () => {
+      instance.onSlide = undefined;
+    };
+  }, [preview, stage, push]);
+  useEffect(() => {
+    if (error) return;
+    const opening: Record<UploadStage, string> = {
+      uploading: `Sending ${filename}`,
+      reading: 'Opening the deck',
+      generating: 'Handing the material to the model',
+      saving: 'Writing your study set to the library',
+    };
+    push(opening[stage], 'accent');
+    if (stage !== 'generating') return;
+    let i = 0;
+    const timer = setInterval(() => push(WORK[i++ % WORK.length]), 3200);
+    return () => clearInterval(timer);
+  }, [stage, filename, error, push]);
+  useEffect(() => {
+    if (preview)
+      push(
+        `Found ${preview.slides ? `${preview.slides} slides · ` : ''}${preview.words.toLocaleString()} words`,
+        'accent',
+      );
+  }, [preview, push]);
+  useEffect(() => {
+    if (!concepts.length) return;
+    push(`Concept map ready · ${concepts.length} concepts`, 'good');
+    let i = 0;
+    const timer = setInterval(() => {
+      if (i >= Math.min(concepts.length, 12)) return clearInterval(timer);
+      push(`+ ${concepts[i++]}`);
+    }, 260);
+    return () => clearInterval(timer);
+  }, [concepts, push]);
+  useEffect(() => {
+    if (ready.materials)
+      push('Flashcards, questions and summaries ready', 'good');
+  }, [ready.materials, push]);
+  useEffect(() => {
+    if (complete) push('Study set saved', 'good');
+  }, [complete, push]);
+
+  const title = error
+    ? ['Something', 'interrupted', 'us.']
+    : complete
+      ? ['Ready', 'when', 'you', 'are.']
+      : current.title;
   return createPortal(
     <div
       ref={panel}
@@ -85,126 +214,61 @@ export default function GenerationScreen({
       aria-modal="true"
       aria-labelledby="generation-title"
       tabIndex={-1}
-      className={`generation-screen ${paused || hidden || error ? 'motion-paused' : ''} ${complete ? 'is-complete' : ''} ${error ? 'has-error' : ''}`}
+      className={`generation-screen phase-${phase} ${paused ? 'is-paused' : ''}`}
     >
-      <header className="generation-header">
+      <canvas ref={canvas} className="generation-canvas" aria-hidden />
+      <div className="generation-vignette" aria-hidden />
+      <div className="generation-flash" aria-hidden />
+
+      <header className="generation-top">
         <span className="generation-brand">
-          mnemo<span>.</span>
+          <LogoMark size={26} />
+          Mnemo
         </span>
-        <span className="generation-filename" title={filename}>
+        <span className="generation-file mono" title={filename}>
           {filename}
+        </span>
+        <span className="generation-clock mono" aria-hidden>
+          {pad(Math.floor(seconds / 60))}:{pad(seconds % 60)}
         </span>
         <button
           className="generation-motion"
           onClick={() => setPaused((p) => !p)}
           aria-pressed={paused}
         >
-          {paused ? 'Resume animation' : 'Pause animation'}
+          {paused ? 'Resume motion' : 'Pause motion'}
         </button>
       </header>
-      <div className="generation-body">
-        <div className="generation-reactor" aria-hidden="true">
-          <div className="reactor-disc reactor-disc-outer" />
-          <div className="reactor-disc reactor-disc-inner" />
-          <svg className="reactor-network" viewBox="0 0 600 600" fill="none">
-            <circle
-              cx="300"
-              cy="300"
-              r="272"
-              stroke="currentColor"
-              strokeDasharray="1 13"
-              className="reactor-ticks"
-            />
-            <g className="reactor-orbit">
-              <circle
-                cx="300"
-                cy="300"
-                r="246"
-                stroke="currentColor"
-                strokeDasharray="90 18 2 18"
-              />
-            </g>
-            <g className="reactor-orbit reactor-orbit-reverse">
-              <circle
-                cx="300"
-                cy="300"
-                r="163"
-                stroke="currentColor"
-                strokeDasharray="170 80"
-              />
-            </g>
-            {points.map((point, i) => (
-              <g
-                key={i}
-                style={{ '--node-delay': `${i * -0.37}s` } as CSSProperties}
-              >
-                <path
-                  className="reactor-link"
-                  d={`M300 300 L${point.x} ${point.y}`}
-                />
-                <path
-                  className="reactor-signal"
-                  d={`M300 300 L${point.x} ${point.y}`}
-                  pathLength="1"
-                />
-                {i >= 6 && (
-                  <path
-                    className="reactor-link"
-                    d={`M${points[i - 6].x} ${points[i - 6].y} L${point.x} ${point.y}`}
-                  />
-                )}
-                <rect
-                  className="reactor-node"
-                  x={point.x - 5}
-                  y={point.y - 5}
-                  width="10"
-                  height="10"
-                  rx="2"
-                />
-              </g>
-            ))}
-            <circle className="reactor-wave" cx="300" cy="300" r="46" />
-            <circle
-              className="reactor-wave reactor-wave-late"
-              cx="300"
-              cy="300"
-              r="46"
-            />
-          </svg>
-          <div className="reactor-source">
-            <svg
-              viewBox="0 0 48 48"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-            >
-              {complete ? (
-                <path d="m12 24 8 8 16-17" />
-              ) : (
-                <>
-                  <path d="M14 7h13l9 9v25H14zM27 7v10h9M20 24h10M20 30h10M20 36h6" />
-                  <path className="reactor-scan" d="M8 24h32" />
-                </>
-              )}
-            </svg>
-          </div>
-          <span className="reactor-caption">
-            One source. A whole new understanding.
-          </span>
-        </div>
+
+      <section className="generation-main">
         <div className="generation-copy">
+          <span className="generation-stage-index mono" aria-hidden>
+            {complete
+              ? '✓'
+              : error
+                ? '!'
+                : `${pad(index + 1)} / ${pad(STAGES.length)}`}
+          </span>
           <div role="status" aria-live="polite" aria-atomic="true">
-            <h1 id="generation-title">
-              {error
-                ? 'A connection interrupted.'
-                : complete
-                  ? 'Ready when you are.'
-                  : current.title}
+            <h1
+              id="generation-title"
+              key={title.join(' ')}
+              className="generation-title"
+            >
+              {title.map((word, i) => (
+                <span key={i}>
+                  <span className="generation-word">
+                    <span style={{ animationDelay: `${i * 70}ms` }}>
+                      {i === title.length - 1 ? <em>{word}</em> : word}
+                    </span>
+                  </span>{' '}
+                </span>
+              ))}
             </h1>
-            <p className="generation-description">
+            <p className="generation-detail">
               {error ||
                 (complete
-                  ? 'Your study material is saved. Opening your dashboard…'
+                  ? 'Your study set is saved. Opening your study plan…'
                   : current.detail)}
             </p>
           </div>
@@ -216,52 +280,69 @@ export default function GenerationScreen({
               <button className="secondary-button" onClick={onBack}>
                 Back to upload
               </button>
-              <Link href="/" onClick={onBack}>
-                Check document library
+              <Link className="text-button" href="/#library" onClick={onBack}>
+                Check the library
               </Link>
             </div>
           ) : (
-            <>
-              <div className="generation-activity">
-                <span className="generation-beacon" />
-                <span>
-                  {complete
-                    ? 'Opening dashboard'
-                    : stage === 'generating'
-                      ? 'Study generation in progress'
-                      : current.label}
-                </span>
-                <span className="generation-elapsed" aria-hidden="true">
-                  {Math.floor(seconds / 60)}:
-                  {String(seconds % 60).padStart(2, '0')}
-                </span>
-              </div>
-              {stage === 'generating' && (
-                <ul className="generation-results">
-                  <li className={ready.graph ? 'is-ready' : ''}>
-                    <span />
-                    {ready.graph ? 'Concept map ready' : 'Connecting concepts'}
-                  </li>
-                  <li className={ready.materials ? 'is-ready' : ''}>
-                    <span />
-                    {ready.materials
-                      ? 'Practice material ready'
-                      : 'Building practice material'}
-                  </li>
-                </ul>
-              )}
-              <p className="generation-note">
-                {seconds >= 90
-                  ? 'Still working. Longer documents can take a few minutes. Keep this tab open; your dashboard will open automatically.'
-                  : 'Keep this tab open. We’ll take you to your dashboard automatically.'}
-              </p>
-            </>
+            <ol className="generation-log" aria-hidden>
+              {log.map((line) => (
+                <li
+                  key={line.id}
+                  className={line.tone ? `is-${line.tone}` : ''}
+                >
+                  {line.text}
+                </li>
+              ))}
+            </ol>
           )}
         </div>
-      </div>
-      <footer className="generation-footer" aria-label="Generation progress">
+
+        <dl className="generation-stats" aria-label="What Mnemo found">
+          <div>
+            <dt>Slides</dt>
+            <dd>
+              <CountUp value={preview ? preview.slides : null} />
+            </dd>
+          </div>
+          <div>
+            <dt>Words read</dt>
+            <dd>
+              <CountUp value={preview ? preview.words : null} />
+            </dd>
+          </div>
+          <div>
+            <dt>Concepts</dt>
+            <dd>
+              <CountUp
+                value={
+                  result
+                    ? result.concept_node_count
+                    : concepts.length
+                      ? concepts.length
+                      : null
+                }
+              />
+            </dd>
+          </div>
+          <div>
+            <dt>Flashcards</dt>
+            <dd>
+              <CountUp value={result ? result.flashcard_count : null} />
+            </dd>
+          </div>
+          <div>
+            <dt>Questions</dt>
+            <dd>
+              <CountUp value={result ? result.quiz_question_count : null} />
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <footer className="generation-rail">
         <ol>
-          {stages.map((s, i) => (
+          {STAGES.map((s, i) => (
             <li
               key={s.id}
               className={
@@ -273,27 +354,22 @@ export default function GenerationScreen({
               }
               aria-current={!complete && i === index ? 'step' : undefined}
             >
-              <span className="generation-step-number">
-                {complete || i < index ? (
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  >
-                    <path d="m3 8 3 3 7-7" />
-                  </svg>
-                ) : (
-                  String(i + 1).padStart(2, '0')
-                )}
+              <span className="generation-rail-bar">
+                <i />
               </span>
-              <span>{s.label}</span>
+              <span className="mono">
+                {pad(i + 1)} {s.label}
+              </span>
             </li>
           ))}
         </ol>
-        <span className="generation-footer-note">
-          From information to understanding.
-        </span>
+        <p className="generation-hint">
+          {complete
+            ? 'Saved to your library.'
+            : seconds >= 90
+              ? 'Long decks take a few minutes. Keep this tab open; your study plan opens automatically.'
+              : 'Keep this tab open. Your study plan opens automatically.'}
+        </p>
       </footer>
     </div>,
     document.body,

@@ -21,6 +21,28 @@ interface Tables {
   concept_graphs: ConceptGraphRow;
   workbench_content: WorkbenchContent;
   workbench_mastery: WorkbenchMastery;
+  document_sources: {
+    id: string;
+    document_id: string;
+    file_type: string;
+    data_base64: string;
+    preview_pdf_base64: string | null;
+  };
+  document_slides: import('./document-slides').DocumentSlide;
+  slide_explanations: {
+    id: string;
+    slide_id: string;
+    explanation: import('./slide-tutor').SlideExplanation;
+    created_at: string;
+  };
+  slide_threads: import('./slide-tutor').SlideThread;
+  slide_progress: {
+    id: string;
+    slide_id: string;
+    document_id: string;
+    status: import('./slide-tutor').SlideStatus;
+    updated_at: string;
+  };
   workbench_sessions: import('./workbench-learning').LearningSession;
   chat_conversations: {
     id: string;
@@ -40,6 +62,11 @@ const tables = new Set([
   'workbench_content',
   'workbench_mastery',
   'workbench_sessions',
+  'document_sources',
+  'document_slides',
+  'slide_explanations',
+  'slide_threads',
+  'slide_progress',
   'chat_conversations',
 ]);
 let connection: ReturnType<typeof postgres> | undefined;

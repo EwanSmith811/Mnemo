@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/database';
 import type { QuestionType } from '@/types';
+import { gradeAnswer } from '@/lib/quiz-grading';
 
 interface SubmittedAnswer {
   question_id: string;
@@ -15,8 +16,8 @@ export async function POST(
   { params }: { params: Promise<{ documentId: string }> },
 ) {
   const { documentId } = await params;
-  const body = await request.json();
-  const { answers } = body as { answers: SubmittedAnswer[] };
+  const body = await request.json().catch(() => null);
+  const answers = body?.answers as SubmittedAnswer[];
 
   if (
     !Array.isArray(answers) ||
@@ -60,55 +61,15 @@ export async function POST(
       { status: 400 },
     );
 
-  // Grade each answer based on question type
   const gradedAnswers = answers.map((a) => {
-    const q = questionMap.get(a.question_id);
-    if (!q) {
-      return { ...a, is_correct: false };
-    }
-
-    let isCorrect = false;
-
-    switch (q.question_type) {
-      case 'mcq':
-        isCorrect = q.correct_answer === a.selected_answer;
-        break;
-      case 'multiple_select': {
-        const correctSet = new Set(q.correct_answers as number[]);
-        const selectedSet = new Set(a.selected_answers);
-        isCorrect =
-          correctSet.size === selectedSet.size &&
-          [...correctSet].every((v) => selectedSet.has(v));
-        break;
-      }
-      case 'short_answer':
-        isCorrect =
-          (a.typed_answer || '').trim().toLowerCase() ===
-          (q.correct_answer_text || '').trim().toLowerCase();
-        break;
-      case 'nclex':
-        isCorrect = q.correct_answer === a.selected_answer;
-        break;
-      case 'engineering': {
-        const typed = parseFloat(
-          (a.typed_answer || '').replace(/[^\d.\-eE]/g, ''),
-        );
-        isCorrect =
-          !Number.isNaN(typed) &&
-          typeof q.numeric_answer === 'number' &&
-          typeof q.answer_tolerance === 'number' &&
-          Math.abs(typed - q.numeric_answer) <= q.answer_tolerance;
-        break;
-      }
-    }
-
+    const q = questionMap.get(a.question_id)!;
     return {
       question_id: a.question_id,
       question_type: q.question_type,
       selected_answer: a.selected_answer,
       selected_answers: a.selected_answers,
       typed_answer: a.typed_answer,
-      is_correct: isCorrect,
+      is_correct: gradeAnswer(q, a),
     };
   });
 
@@ -131,7 +92,10 @@ export async function POST(
     .single();
 
   if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not save quiz results. Please retry.' },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({

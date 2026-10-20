@@ -1,52 +1,63 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import GenerationScreen from './GenerationScreen';
-import { readUploadProgress, type UploadStage } from '@/lib/upload-progress';
+import GenerationScreen, { type GenerationState } from './GenerationScreen';
+import { Icon } from './ui';
+import { readUploadProgress } from '@/lib/upload-progress';
 import type { StudyMode } from '@/types';
 import { DOCUMENT_ACCEPT, getDocumentFileType } from '@/lib/document-formats';
+
 const MAX_SIZE = 4 * 1024 * 1024;
+const MODES = [
+  ['engineers', 'Engineering', 'Calculations, derivations and problem solving'],
+  ['nursing', 'Nursing', 'Clinical reasoning and NCLEX-style questions'],
+] as const;
+const INITIAL: GenerationState = {
+  stage: 'uploading',
+  ready: { graph: false, materials: false },
+  preview: null,
+  concepts: [],
+  result: null,
+};
+
 export default function UploadForm({
   onUploadComplete,
 }: {
   onUploadComplete: () => void;
 }) {
   const router = useRouter();
-  const [screen, setScreen] = useState(false);
-  const [stage, setStage] = useState<UploadStage>('uploading');
-  const [ready, setReady] = useState({ graph: false, materials: false });
-  const [complete, setComplete] = useState(false);
-  const inFlight = useRef(false);
   const [mode, setMode] = useState<StudyMode>('engineers');
   const [file, setFile] = useState<File | null>(null);
-  const [phase, setPhase] = useState<'idle' | 'processing'>('idle');
-  const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [screen, setScreen] = useState(false);
+  const [progress, setProgress] = useState<GenerationState>(INITIAL);
+  const [error, setError] = useState('');
+  const inFlight = useRef(false);
   const input = useRef<HTMLInputElement>(null);
+
   function choose(next?: File) {
     if (!next) return;
     setError('');
     if (!getDocumentFileType(next.name)) {
-      setFile(null);
       setError('Choose a PDF or PowerPoint file (.pptx, .ppt, .pps, .ppsx).');
       return;
     }
     if (!next.size || next.size > MAX_SIZE) {
       setError(
-        'Choose a file between 1 byte and 4 MB. Split larger documents before uploading.',
+        'That file is over 4 MB. Split the deck or export a lighter PDF, then try again.',
       );
       return;
     }
     setFile(next);
   }
+
   async function upload() {
     if (!file || inFlight.current) return;
     inFlight.current = true;
+    setBusy(true);
     setScreen(true);
-    setStage('uploading');
-    setReady({ graph: false, materials: false });
-    setComplete(false);
-    setPhase('processing');
+    setProgress(INITIAL);
     setError('');
     const form = new FormData();
     form.append('file', file);
@@ -57,14 +68,19 @@ export default function UploadForm({
         body: form,
         headers: { Accept: 'application/x-ndjson' },
       });
-      const data = await readUploadProgress(res, (event) => {
-        setStage(event.stage);
-        if (event.ready)
-          setReady((previous) => ({ ...previous, [event.ready!]: true }));
-      });
-      setComplete(true);
+      const data = await readUploadProgress(res, (event) =>
+        setProgress((p) => ({
+          ...p,
+          stage: event.stage,
+          ready: event.ready ? { ...p.ready, [event.ready]: true } : p.ready,
+          preview: event.preview ?? p.preview,
+          concepts: event.concepts ?? p.concepts,
+        })),
+      );
+      setProgress((p) => ({ ...p, stage: 'saving', result: data }));
       onUploadComplete();
-      router.replace(`/documents/${data.document_id}`);
+      // Let the completion moment land before leaving the screen.
+      setTimeout(() => router.replace(`/documents/${data.document_id}`), 1600);
     } catch (err) {
       setError(
         err instanceof Error
@@ -72,19 +88,18 @@ export default function UploadForm({
           : 'Upload failed. Check your connection and retry.',
       );
       inFlight.current = false;
-      setPhase('idle');
+      setBusy(false);
     }
   }
-  const busy = phase !== 'idle';
+
+  const type = file ? getDocumentFileType(file.name) : null;
   return (
-    <div className="upload-form" aria-busy={busy}>
+    <div className="upload-form card" aria-busy={busy}>
       {screen && file && (
         <GenerationScreen
           filename={file.name}
-          stage={stage}
-          ready={ready}
+          state={progress}
           error={error}
-          complete={complete}
           onRetry={upload}
           onBack={() => {
             setScreen(false);
@@ -92,16 +107,13 @@ export default function UploadForm({
           }}
         />
       )}
-      <fieldset disabled={busy} className="study-mode">
-        <legend>Study focus</legend>
-        <div>
-          {(
-            [
-              ['engineers', 'Engineering', 'Calculations & problem solving'],
-              ['nursing', 'Nursing', 'Clinical reasoning & NCLEX'],
-            ] as const
-          ).map(([value, name, description]) => (
-            <label key={value}>
+      <fieldset disabled={busy} className="upload-step">
+        <legend>
+          <span className="mono">A</span> What are you studying?
+        </legend>
+        <div className="mode-options">
+          {MODES.map(([value, name, description]) => (
+            <label key={value} className="mode-option">
               <input
                 type="radio"
                 name="studyMode"
@@ -109,83 +121,96 @@ export default function UploadForm({
                 checked={mode === value}
                 onChange={() => setMode(value)}
               />
-              <span>
-                <strong>{name}</strong>
-                <small>{description}</small>
-              </span>
+              <span className="mode-radio" aria-hidden />
+              <strong>{name}</strong>
+              <small>{description}</small>
             </label>
           ))}
         </div>
       </fieldset>
-      <div
-        className={`file-drop ${dragging ? 'is-dragging' : ''}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!busy) setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          if (!busy) choose(e.dataTransfer.files[0]);
-        }}
-      >
-        <input
-          ref={input}
-          id="document-file"
-          type="file"
-          accept={DOCUMENT_ACCEPT}
-          disabled={busy}
-          onChange={(e) => choose(e.target.files?.[0])}
-          className="sr-only"
-        />
-        <svg
-          width="26"
-          height="26"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden
-        >
-          <path d="M12 16V3m-4 4 4-4 4 4M4 15v5h16v-5" />
-        </svg>
-        <label htmlFor="document-file">
-          {file ? file.name : 'Drop your document here'}
-          <span>
-            {file
-              ? `${(file.size / 1024 / 1024).toFixed(2)} MB · Choose a different file`
-              : 'or browse files · PDF / PPTX / PPT / PPS / PPSX · Up to 4 MB'}
-          </span>
-        </label>
-      </div>
-      <button
-        className="primary-button upload-button"
-        disabled={!file || busy}
-        onClick={upload}
-      >
-        {busy ? (
-          <>
-            <span className="loading-spinner" />
-            Preparing study material…
-          </>
-        ) : (
-          <>
-            Generate study material <span aria-hidden>↗</span>
-          </>
-        )}
-      </button>
-      {busy && (
-        <p className="upload-help" role="status">
-          Reading your document and generating your study tools. This may take a
-          few minutes. Keep this page open.
+
+      <div className="upload-step">
+        <p className="upload-step-label">
+          <span className="mono">B</span> Add your deck
         </p>
-      )}
+        <div
+          className={`file-drop ${dragging ? 'is-dragging' : ''} ${file ? 'has-file' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!busy) setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (!busy) choose(e.dataTransfer.files[0]);
+          }}
+        >
+          <input
+            ref={input}
+            id="document-file"
+            type="file"
+            accept={DOCUMENT_ACCEPT}
+            disabled={busy}
+            onChange={(e) => {
+              choose(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+            className="sr-only"
+          />
+          {file ? (
+            <div className="file-ticket">
+              <span className="file-ticket-type mono">{type}</span>
+              <div>
+                <strong title={file.name}>{file.name}</strong>
+                <small className="mono">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB · ready
+                </small>
+              </div>
+              <label htmlFor="document-file" className="text-button">
+                Replace
+              </label>
+            </div>
+          ) : (
+            <label htmlFor="document-file" className="file-drop-empty">
+              <span className="file-drop-icon">
+                <Icon name="upload" size={22} />
+              </span>
+              <strong>
+                {dragging ? 'Release to add it' : 'Drop your slides here'}
+              </strong>
+              <small>
+                or <u>browse files</u> · PDF, PPTX, PPT, PPS, PPSX · up to 4 MB
+              </small>
+            </label>
+          )}
+        </div>
+      </div>
+
       {error && !screen && (
         <p className="inline-error" role="alert">
           {error}
         </p>
       )}
+      <button
+        className="primary-button is-large is-block"
+        disabled={!file || busy}
+        onClick={upload}
+      >
+        {busy ? (
+          <>
+            <span className="loading-spinner" /> Building your study set…
+          </>
+        ) : (
+          <>
+            Build my study set <span className="arrow">↗</span>
+          </>
+        )}
+      </button>
+      <p className="upload-footnote">
+        Takes a minute or two. Text-based files only; scanned images can’t be
+        read.
+      </p>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { NextRequest } from 'next/server';
 import { POST } from '../src/app/api/upload/route';
-import { database } from '../src/lib/database';
+import { database, Query } from '../src/lib/database';
 import { readUploadProgress } from '../src/lib/upload-progress';
 
 const existing = {
@@ -48,6 +48,11 @@ test('duplicate upload routes reuse existing documents or reject in-progress wor
     saves++;
     throw new Error('No save should happen');
   });
+  t.mock.method(
+    database,
+    'from',
+    (table: string) => new Query(table, async () => [{ id: 'existing' }]),
+  );
   const claim = t.mock.method(database.uploads, 'claim', async () => ({
     kind: 'existing' as const,
     document: existing,

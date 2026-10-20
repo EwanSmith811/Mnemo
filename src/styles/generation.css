@@ -1,0 +1,405 @@
+/* The upload screen is always "ink", whatever the app theme: it is a moment. */
+.generation-screen {
+  --gen-bg: #0b0a09;
+  --gen-ink: #f2ece2;
+  --gen-ink-2: #a9a094;
+  --gen-ink-3: #6f685e;
+  --gen-line: rgb(242 236 226 / 0.12);
+  --gen-accent: #ff6b3d;
+  --gen-good: #7ccb9b;
+  --gen-bad: #f2766b;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  background: var(--gen-bg);
+  color: var(--gen-ink);
+  animation: generation-in 0.9s var(--ease-out) both;
+}
+.generation-screen:focus {
+  outline: none;
+}
+@keyframes generation-in {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    clip-path: circle(150% at 50% 50%);
+  }
+}
+.generation-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.generation-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 62% 42%, rgb(255 107 61 / 0.09), transparent 38%),
+    radial-gradient(ellipse at center, transparent 40%, rgb(0 0 0 / 0.65)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 3px,
+      rgb(255 255 255 / 0.012) 3px 4px
+    );
+}
+.generation-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 62% 42%,
+    rgb(255 160 120 / 0.5),
+    transparent 60%
+  );
+  opacity: 0;
+}
+.phase-complete .generation-flash {
+  animation: generation-flash 1.6s var(--ease-out) 0.55s both;
+}
+@keyframes generation-flash {
+  10% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── Top bar ───────────────────────────────────────────────── */
+.generation-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px clamp(20px, 4vw, 48px);
+}
+.generation-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  /* The mark is always shown in its ink-theme colors on this screen. */
+  --ink: var(--gen-ink);
+  --bg: var(--gen-bg);
+  --accent: var(--gen-accent);
+}
+.generation-file {
+  max-width: 34vw;
+  padding: 6px 12px;
+  border: 1px solid var(--gen-line);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--gen-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.generation-clock {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--gen-ink-2);
+  letter-spacing: 0.08em;
+}
+.generation-motion {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--gen-line);
+  font-size: 12px;
+  color: var(--gen-ink-2);
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+.generation-motion:hover {
+  color: var(--gen-ink);
+  border-color: var(--gen-ink-3);
+}
+
+/* ── Main stage ────────────────────────────────────────────── */
+.generation-main {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 40px;
+  padding: 0 clamp(20px, 4vw, 48px) 28px;
+  pointer-events: none;
+}
+.generation-main > * {
+  pointer-events: auto;
+}
+.generation-copy {
+  display: grid;
+  gap: 22px;
+  max-width: 640px;
+}
+.generation-stage-index {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--gen-accent);
+}
+.generation-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(52px, 8vw, 116px);
+  line-height: 1.02;
+  letter-spacing: -0.012em;
+}
+.generation-title em {
+  font-style: italic;
+  color: var(--gen-accent);
+}
+.generation-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+.generation-word > span {
+  display: inline-block;
+  animation: word-up 0.9s var(--ease-out) both;
+}
+@keyframes word-up {
+  from {
+    transform: translateY(105%) rotate(4deg);
+    opacity: 0;
+  }
+}
+.generation-detail {
+  max-width: 48ch;
+  color: var(--gen-ink-2);
+  font-size: 16px;
+}
+.phase-error .generation-detail {
+  color: var(--gen-bad);
+}
+.generation-log {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  height: 172px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--gen-ink-3);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent);
+}
+.generation-log li {
+  display: flex;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: log-in 0.45s var(--ease-out) both;
+}
+.generation-log li::before {
+  content: '›';
+  color: var(--gen-ink-3);
+}
+.generation-log li:first-child {
+  color: var(--gen-ink);
+}
+.generation-log li.is-accent:first-child::before,
+.generation-log li.is-accent::before {
+  color: var(--gen-accent);
+}
+.generation-log li.is-good {
+  color: var(--gen-good);
+}
+@keyframes log-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    filter: blur(4px);
+  }
+}
+.generation-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.generation-recovery .secondary-button {
+  background: transparent;
+  color: var(--gen-ink);
+  border-color: var(--gen-line);
+}
+.generation-recovery .text-button {
+  color: var(--gen-ink-2);
+}
+
+.generation-stats {
+  display: grid;
+  gap: 0;
+  min-width: 220px;
+  border-top: 1px solid var(--gen-line);
+}
+.generation-stats div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gen-line);
+}
+.generation-stats dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gen-ink-3);
+}
+.generation-stats dd {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.phase-complete .generation-stats dd {
+  color: var(--gen-accent);
+}
+
+/* ── Progress rail ─────────────────────────────────────────── */
+.generation-rail {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 0 clamp(20px, 4vw, 48px) 26px;
+}
+.generation-rail ol {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.generation-rail li {
+  display: grid;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gen-ink-3);
+  transition: color 0.4s;
+}
+.generation-rail li.is-active,
+.generation-rail li.is-done {
+  color: var(--gen-ink);
+}
+.generation-rail-bar {
+  position: relative;
+  display: block;
+  height: 2px;
+  background: var(--gen-line);
+  overflow: hidden;
+}
+.generation-rail-bar i {
+  position: absolute;
+  inset: 0;
+  background: var(--gen-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.8s var(--ease-out);
+}
+.generation-rail .is-done .generation-rail-bar i {
+  transform: scaleX(1);
+}
+.generation-rail .is-active .generation-rail-bar i {
+  width: 40%;
+  transform: none;
+  animation: rail-run 1.6s var(--ease-in-out) infinite;
+}
+@keyframes rail-run {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+.generation-hint {
+  font-size: 12px;
+  color: var(--gen-ink-3);
+}
+
+.generation-screen.is-paused *,
+.generation-screen.is-paused *::before {
+  animation-play-state: paused !important;
+}
+.phase-error .generation-title em {
+  color: var(--gen-bad);
+}
+
+@media (max-width: 900px) {
+  .generation-main {
+    grid-template-columns: 1fr;
+    align-items: end;
+    gap: 22px;
+  }
+  .generation-stats {
+    grid-template-columns: repeat(5, 1fr);
+    min-width: 0;
+    border: 0;
+  }
+  .generation-stats div {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+  }
+  .generation-stats dt {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+  .generation-stats dd {
+    font-size: 22px;
+  }
+  .generation-log {
+    height: 96px;
+  }
+  .generation-file,
+  .generation-clock {
+    display: none;
+  }
+  .generation-motion {
+    margin-left: auto;
+  }
+}
+@media (max-width: 520px) {
+  .generation-detail {
+    font-size: 14px;
+  }
+  .generation-rail li .mono {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+  }
+}
+@media (max-width: 900px) {
+  .generation-main {
+    align-content: end;
+  }
+}
+@media (max-width: 900px) {
+  .generation-main::before {
+    content: '';
+    position: absolute;
+    inset: -60px 0 0;
+    z-index: -1;
+    background: linear-gradient(transparent, var(--gen-bg) 30%);
+    pointer-events: none;
+  }
+  .generation-title {
+    font-size: clamp(44px, 12vw, 72px);
+  }
+  .generation-log {
+    height: 70px;
+  }
+}

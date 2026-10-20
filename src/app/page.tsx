@@ -1,39 +1,50 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import UploadForm from '@/components/UploadForm';
 import DocumentList from '@/components/DocumentList';
+import { Icon, stagger } from '@/components/ui';
+import { Wordmark } from '@/components/Logo';
 import type { Document } from '@/types';
+
+const METHOD = [
+  [
+    'Walk through',
+    'A plain-language explanation and a visual for every slide.',
+  ],
+  ['Recall', 'Flashcards on a spaced schedule, before memories fade.'],
+  ['Test', 'Quizzes with explanations, and a retry for what you missed.'],
+  ['Apply', 'New problems that check you can use it, not just repeat it.'],
+] as const;
+
+async function loadDocuments(signal?: AbortSignal) {
+  const res = await fetch('/api/documents', { signal });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Could not load documents.');
+  return Array.isArray(data) ? (data as Document[]) : [];
+}
 
 export default function Home() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const fetchDocuments = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/documents');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not load documents.');
-      setDocuments(Array.isArray(data) ? data : []);
+      setDocuments(await loadDocuments());
       setError('');
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not load documents.',
-      );
+      setError((err as Error).message || 'Could not load documents.');
     } finally {
       setIsLoading(false);
     }
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/documents', { signal: controller.signal })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Could not load documents.');
-        setDocuments(Array.isArray(data) ? data : []);
-      })
+    loadDocuments(controller.signal)
+      .then(setDocuments)
       .catch((err) => {
-        if (err.name !== 'AbortError') setError(err.message);
+        if (err.name !== 'AbortError')
+          setError(err.message || 'Could not load documents.');
       })
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false);
@@ -43,113 +54,143 @@ export default function Home() {
   const filtered = useMemo(
     () =>
       documents.filter((d) =>
-        d.filename.toLowerCase().includes(search.toLowerCase()),
+        d.filename.toLowerCase().includes(search.trim().toLowerCase()),
       ),
     [documents, search],
   );
   return (
     <main className="library-page">
-      <section className="library-intro">
-        <div>
-          <h1>
-            Learn the pieces.
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="eyebrow rise" style={stagger(0)}>
+            <b>●</b> A study system for slide decks
+          </span>
+          <h1 className="display rise" style={stagger(1)}>
+            Every slide,
             <br />
-            <span>See the connections.</span>
+            <em>understood.</em>
           </h1>
-          <p>
-            Turn your course material into a study system. Map the concepts,
-            practice recall, and work through what you don’t know yet.
+          <p className="lede rise" style={stagger(2)}>
+            Drop in a lecture deck. Mnemo walks you through it one slide at a
+            time, then turns it into flashcards, quizzes and practice that show
+            you what actually stuck.
           </p>
-          <a className="intro-link" href="#upload">
-            Start with a document <span aria-hidden>↗</span>
-          </a>
-        </div>
-        <div className="connection-art" aria-hidden="true">
-          <svg viewBox="0 0 500 300">
-            <path
-              d="M75 150H180M180 150C235 150 200 65 280 65H380M180 150H335M180 150C235 150 220 235 300 235H410M335 150C380 150 335 65 380 65M335 150C380 150 365 235 410 235"
-              fill="none"
-              stroke="#3c6c61"
-              strokeWidth="1.5"
-            />
-            <circle cx="75" cy="150" r="32" fill="#153b32" stroke="#72e3ca" />
-            <path
-              d="M62 160V140L75 154L88 140V160"
-              fill="none"
-              stroke="#72e3ca"
-              strokeWidth="2"
-            />
-            {[
-              [180, 150],
-              [280, 65],
-              [335, 150],
-              [300, 235],
-              [380, 65],
-              [410, 235],
-            ].map(([x, y], i) => (
-              <g key={i}>
-                <rect
-                  x={x - 9}
-                  y={y - 9}
-                  width="18"
-                  height="18"
-                  rx="3"
-                  fill="#10251f"
-                  stroke={i % 2 ? '#73a596' : '#72e3ca'}
-                />
-                <circle cx={x} cy={y} r="2" fill="#a6e7d8" />
-              </g>
-            ))}
-          </svg>
-          <span>One source. A connected understanding.</span>
-        </div>
-      </section>
-      <section className="upload-section" id="upload">
-        <div className="section-intro">
-          <h2>Build your study material</h2>
-          <p>
-            Add your lecture notes, slides, or reading. Choose a focus and Mnemo
-            will prepare your study tools.
-          </p>
-          <div className="supported-tools">
-            Concept maps <span>·</span> Flashcards <span>·</span> Quizzes{' '}
-            <span>·</span> Summaries
+          <div className="hero-actions rise" style={stagger(3)}>
+            <a className="primary-button is-large" href="#upload">
+              Upload a deck <span className="arrow">↗</span>
+            </a>
+            {documents.length > 0 && (
+              <a className="ghost-button is-large" href="#library">
+                Open your library
+              </a>
+            )}
           </div>
         </div>
-        <UploadForm onUploadComplete={fetchDocuments} />
+        <div className="hero-deck" aria-hidden="true">
+          {[3, 2, 1].map((n) => (
+            <div key={n} className={`hero-slide hero-slide-${n}`}>
+              <span className="hero-slide-num mono">
+                {String(n + 11).padStart(2, '0')}
+              </span>
+              <i />
+              <i />
+              <i />
+              {n === 1 && (
+                <>
+                  <span className="hero-slide-term">
+                    Cardiac output <b>=</b> HR × SV
+                  </span>
+                  <span className="hero-slide-note">
+                    <Icon name="sparkle" size={13} /> Explained simply
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+          <div className="hero-card">
+            <span className="eyebrow">Check yourself</span>
+            <p>What happens to output if stroke volume falls?</p>
+            <div>
+              <span className="chip is-good">Got it</span>
+              <span className="chip">Shaky</span>
+            </div>
+          </div>
+        </div>
       </section>
-      <section className="library-section">
-        <div className="section-heading">
-          <h2>
-            Your documents <span>{documents.length}</span>
+
+      <ol className="method">
+        {METHOD.map(([title, text], i) => (
+          <li key={title} className="rise" style={stagger(i + 4)}>
+            <span className="mono">0{i + 1}</span>
+            <h2>{title}</h2>
+            <p>{text}</p>
+          </li>
+        ))}
+      </ol>
+
+      <section className="upload-section" id="upload">
+        <div className="upload-intro">
+          <span className="eyebrow">
+            <b>01</b> New study set
+          </span>
+          <h2 className="display">
+            Start with
+            <br />
+            <em>your deck.</em>
           </h2>
-          <label className="search-field">
-            <span className="sr-only">Search documents</span>
-            <input
-              type="search"
-              placeholder="Find a document…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
+          <p>
+            PDF or PowerPoint, up to 4&nbsp;MB. Mnemo keeps the original slides
+            beside every explanation, so you can always check the source.
+          </p>
+        </div>
+        <UploadForm onUploadComplete={() => void refresh()} />
+      </section>
+
+      <section className="library-section" id="library">
+        <div className="library-head">
+          <div>
+            <span className="eyebrow">
+              <b>02</b> Library
+            </span>
+            <h2 className="display">
+              Your decks{' '}
+              <span className="library-count mono">{documents.length}</span>
+            </h2>
+          </div>
+          {documents.length > 3 && (
+            <label className="search-field">
+              <span className="sr-only">Search documents</span>
+              <Icon name="search" />
+              <input
+                type="search"
+                placeholder="Search your decks"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+          )}
         </div>
         {error ? (
           <div className="inline-error" role="alert">
             <p>{error}</p>
-            <button className="secondary-button" onClick={fetchDocuments}>
-              Retry connection
+            <button
+              className="secondary-button is-small"
+              onClick={() => void refresh()}
+            >
+              Retry
             </button>
           </div>
         ) : search && !filtered.length ? (
-          <p className="empty-state">No documents match “{search}”.</p>
+          <p className="empty-state">Nothing matches “{search}”.</p>
         ) : (
           <DocumentList documents={filtered} isLoading={isLoading} />
         )}
       </section>
+
       <footer className="library-footer">
-        <span>Mnemo</span>
+        <Wordmark />
         <p>
-          AI can make mistakes. Check generated material against your source.
+          AI can make mistakes. Check generated material against your slides.
         </p>
       </footer>
     </main>

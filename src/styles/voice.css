@@ -1,0 +1,247 @@
+.voice-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.voice-mode {
+  position: relative;
+  display: grid !important;
+  gap: 12px;
+  align-content: start;
+  min-height: 300px;
+  padding: 28px;
+}
+.voice-mode h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1;
+}
+.voice-mode p {
+  color: var(--ink-2);
+  font-size: 14.5px;
+  max-width: 42ch;
+}
+.voice-mode > .arrow {
+  position: absolute;
+  top: 26px;
+  right: 26px;
+  font-size: 20px;
+  color: var(--ink-3);
+}
+.voice-mode:hover > .arrow {
+  color: var(--accent);
+}
+.voice-mode-art {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 64px;
+  margin-bottom: 10px;
+}
+.voice-mode-art i {
+  width: 6px;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--accent);
+  transform: scaleY(0.3);
+  animation: bars 1.2s var(--ease-in-out) infinite;
+  animation-play-state: paused;
+}
+.voice-mode:hover .voice-mode-art i {
+  animation-play-state: running;
+}
+.voice-mode-art i:nth-child(2) {
+  animation-delay: 0.1s;
+  transform: scaleY(0.6);
+}
+.voice-mode-art i:nth-child(3) {
+  animation-delay: 0.2s;
+  transform: scaleY(0.9);
+}
+.voice-mode-art i:nth-child(4) {
+  animation-delay: 0.3s;
+  transform: scaleY(0.5);
+}
+.voice-mode-art i:nth-child(5) {
+  animation-delay: 0.4s;
+}
+@keyframes bars {
+  50% {
+    transform: scaleY(1);
+  }
+}
+.voice-mode-art.is-question {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: 40px;
+  transition: transform 0.5s var(--ease-spring);
+}
+.voice-mode:hover .voice-mode-art.is-question {
+  transform: rotate(-12deg) scale(1.06);
+}
+.voice-voices {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 28px;
+}
+.voice-voices small {
+  font-size: 12px;
+}
+
+.voice-session {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: calc(100dvh - var(--nav-h) - var(--study-nav-h) - 2px);
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.voice-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.voice-top .segmented button {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.voice-thread {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 0;
+  mask-image: linear-gradient(to bottom, transparent, #000 24px);
+}
+.voice-prompt {
+  justify-self: center;
+  max-width: 40ch;
+  margin-top: 8vh;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.15;
+  color: var(--ink-3);
+}
+.voice-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--accent);
+  animation: pulse-dot 0.9s steps(2) infinite;
+}
+.voice-controls {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 0 22px;
+}
+.voice-controls .inline-error {
+  margin: 0;
+}
+.voice-record {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  transition: transform 0.3s var(--ease-spring);
+}
+.voice-record:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+.voice-record:disabled {
+  opacity: 0.5;
+}
+.voice-record > * {
+  grid-area: 1 / 1;
+}
+.voice-record-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: var(--shadow-2);
+  transition:
+    background-color 0.25s,
+    transform 0.3s var(--ease-spring);
+}
+.voice-record.is-recording .voice-record-icon {
+  background: var(--accent);
+  color: var(--accent-ink);
+  transform: scale(1.08);
+}
+.voice-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Activity rings around the record button. */
+.audio-activity {
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.audio-activity svg {
+  width: 100%;
+  height: 100%;
+}
+.audio-activity-bar {
+  display: none;
+}
+.audio-activity circle {
+  transform-origin: 100px 100px;
+  transition: opacity 0.3s;
+}
+.audio-activity.is-active {
+  color: var(--accent);
+}
+.audio-activity.is-active circle {
+  animation: ripple 1.8s var(--ease-out) infinite;
+}
+.audio-activity.is-active circle:nth-of-type(2) {
+  animation-delay: 0.5s;
+}
+@keyframes ripple {
+  from {
+    transform: scale(0.75);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .voice-modes {
+    grid-template-columns: 1fr;
+  }
+  .voice-mode {
+    min-height: 0;
+  }
+}

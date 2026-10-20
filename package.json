@@ -11,9 +11,12 @@
     "typecheck": "tsc --noEmit",
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
     "format": "prettier --write src scripts tests README.md package.json next.config.ts .prettierrc.json",
-    "format:check": "prettier --check src scripts tests README.md package.json next.config.ts .prettierrc.json"
+    "format:check": "prettier --check src scripts tests README.md package.json next.config.ts .prettierrc.json",
+    "predev": "node scripts/build-preview.mjs",
+    "prebuild": "node scripts/build-preview.mjs"
   },
   "dependencies": {
+    "@aiden0z/pptx-renderer": "^1.4.0",
     "archive-codec": "^1.11.26",
     "next": "^16.4.2",
     "officeparser": "^8.1.1",
@@ -28,16 +31,20 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.14",
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "^16.4.2",
     "prettier": "^3.9.10",
-    "tailwindcss": "^4",
     "tsx": "^4.20.0",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@aiden0z/pptx-renderer": {
+      "echarts": "^6.1.0"
+    }
   }
 }

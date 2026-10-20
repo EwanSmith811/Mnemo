@@ -1,485 +1,346 @@
 'use client';
 
-import { useState } from 'react';
-import type { QuizQuestion, QuestionType, QuizAnswer } from '@/types';
-import ScoreDisplay from './ScoreDisplay';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { QuizAnswer, QuizQuestion, QuestionType } from '@/types';
+import { gradeAnswer } from '@/lib/quiz-grading';
 import NclexRationaleCard from './NclexRationaleCard';
+import { Icon } from './ui';
 
-interface QuizPlayerProps {
-  questions: QuizQuestion[];
-  documentId: string;
-  onQuizComplete?: (
-    score: {
-      total_questions: number;
-      correct_answers: number;
-      score_percentage: number;
-      answers: QuizAnswer[];
-    },
-    questions: QuizQuestion[],
-  ) => void;
+export const TYPE_LABELS: Record<QuestionType, string> = {
+  mcq: 'Multiple choice',
+  multiple_select: 'Select all that apply',
+  short_answer: 'Short answer',
+  nclex: 'NCLEX style',
+  engineering: 'Calculation',
+};
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+export interface QuizScore {
+  total_questions: number;
+  correct_answers: number;
+  score_percentage: number;
+  answers: QuizAnswer[];
 }
-
-interface UserAnswer {
-  question_id: string;
-  question_type: QuestionType;
-  selected_answer: number;
-  selected_answers: number[];
-  typed_answer: string;
+interface Draft {
+  selected: number | null;
+  multi: Set<number>;
+  typed: string;
 }
+const empty = (): Draft => ({ selected: null, multi: new Set(), typed: '' });
 
 export default function QuizPlayer({
   questions,
   documentId,
-  onQuizComplete,
-}: QuizPlayerProps) {
-  const [submitError, setSubmitError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [selectedAnswers, setSelectedAnswers] = useState<Set<number>>(
-    new Set(),
+  onComplete,
+  onQuit,
+}: {
+  questions: QuizQuestion[];
+  documentId: string;
+  onComplete: (score: QuizScore) => void;
+  onQuit: () => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [draft, setDraft] = useState<Draft>(empty);
+  const [checked, setChecked] = useState(false);
+  const [results, setResults] = useState<boolean[]>([]);
+  const [answers, setAnswers] = useState<QuizAnswer[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  const question = questions[index];
+  const type = question.question_type || 'mcq';
+  const choiceBased = type === 'mcq' || type === 'nclex';
+  const last = index === questions.length - 1;
+
+  const answer = useCallback(
+    (d: Draft): QuizAnswer => ({
+      question_id: question.id,
+      question_type: type,
+      selected_answer: d.selected ?? -1,
+      selected_answers: [...d.multi],
+      typed_answer: d.typed,
+      is_correct: gradeAnswer(question, {
+        selected_answer: d.selected ?? -1,
+        selected_answers: [...d.multi],
+        typed_answer: d.typed,
+      }),
+    }),
+    [question, type],
   );
-  const [typedAnswer, setTypedAnswer] = useState('');
-  const [showResult, setShowResult] = useState(false);
-  const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
-  const [quizComplete, setQuizComplete] = useState(false);
-  const [score, setScore] = useState<{
-    total_questions: number;
-    correct_answers: number;
-    score_percentage: number;
-    answers: QuizAnswer[];
-  } | null>(null);
+  const ready = choiceBased
+    ? draft.selected !== null
+    : type === 'multiple_select'
+      ? draft.multi.size > 0
+      : !!draft.typed.trim();
 
-  if (questions.length === 0) {
-    return (
-      <div className="py-16 text-center text-zinc-500">
-        No quiz questions available.
-      </div>
-    );
-  }
+  const check = useCallback(
+    (d = draft) => {
+      if (checked) return;
+      const a = answer(d);
+      setChecked(true);
+      setResults((r) => [...r, a.is_correct]);
+      setAnswers((list) => [...list, a]);
+    },
+    [answer, checked, draft],
+  );
 
-  if (quizComplete && score) {
-    // If parent wants to handle the results screen, hand off control
-    if (onQuizComplete) return null;
-    return <ScoreDisplay score={score} questions={questions} />;
-  }
-
-  const question = questions[currentIndex];
-  const questionType = question.question_type || 'mcq';
-  const choiceLabels = ['A', 'B', 'C', 'D'];
-
-  const isCurrentCorrect = (): boolean => {
-    switch (questionType) {
-      case 'mcq':
-      case 'nclex':
-        return selectedAnswer === question.correct_answer;
-      case 'multiple_select': {
-        const correctSet = new Set(question.correct_answers || []);
-        return (
-          correctSet.size === selectedAnswers.size &&
-          [...correctSet].every((v) => selectedAnswers.has(v))
-        );
-      }
-      case 'short_answer':
-        return (
-          typedAnswer.trim().toLowerCase() ===
-          (question.correct_answer_text || '').trim().toLowerCase()
-        );
-      case 'engineering': {
-        const typed = parseFloat(typedAnswer.replace(/[^\d.\-eE]/g, ''));
-        return (
-          !Number.isNaN(typed) &&
-          question.numeric_answer !== null &&
-          question.answer_tolerance !== null &&
-          Math.abs(typed - question.numeric_answer) <= question.answer_tolerance
-        );
-      }
-      default:
-        return false;
+  const finish = useCallback(async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/quiz/${documentId}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onComplete(data);
+    } catch {
+      setError(
+        'Your results weren’t saved. Your answers are still here; try again.',
+      );
+      setSubmitting(false);
     }
-  };
+  }, [answers, documentId, onComplete]);
+  const next = useCallback(() => {
+    if (!checked || submitting) return;
+    if (last) return void finish();
+    setIndex((i) => i + 1);
+    setDraft(empty());
+    setChecked(false);
+  }, [checked, finish, last, submitting]);
 
-  const handleMCQSelect = (choiceIndex: number) => {
-    if (showResult) return;
-    setSelectedAnswer(choiceIndex);
-    setShowResult(true);
-  };
+  useEffect(() => {
+    if (!checked && !choiceBased && type !== 'multiple_select')
+      input.current?.focus();
+  }, [index, checked, choiceBased, type]);
 
-  const handleMultiSelectToggle = (choiceIndex: number) => {
-    if (showResult) return;
-    setSelectedAnswers((prev) => {
-      const next = new Set(prev);
-      if (next.has(choiceIndex)) {
-        next.delete(choiceIndex);
-      } else {
-        next.add(choiceIndex);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement).closest('input, textarea');
+      if (e.key === 'Enter') {
+        if (checked) {
+          e.preventDefault();
+          next();
+        } else if (ready && !typing) {
+          e.preventDefault();
+          check();
+        }
+        return;
       }
-      return next;
-    });
-  };
-
-  const handleSubmitAnswer = () => {
-    setShowResult(true);
-  };
-
-  const buildCurrentAnswer = (): UserAnswer => ({
-    question_id: question.id,
-    question_type: questionType,
-    selected_answer: selectedAnswer ?? -1,
-    selected_answers: [...selectedAnswers],
-    typed_answer: typedAnswer,
-  });
-
-  const handleNext = async () => {
-    const currentAnswer = buildCurrentAnswer();
-    const newAnswers = [...userAnswers, currentAnswer];
-    if (isSubmitting) return;
-    setSubmitError('');
-
-    if (currentIndex === questions.length - 1) {
-      setIsSubmitting(true);
-      try {
-        const res = await fetch(`/api/quiz/${documentId}/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answers: newAnswers }),
+      if (typing || checked || e.metaKey || e.ctrlKey) return;
+      const n =
+        '1234'.indexOf(e.key) >= 0
+          ? '1234'.indexOf(e.key)
+          : 'abcd'.indexOf(e.key.toLowerCase());
+      if (n < 0 || n >= question.choices.length) return;
+      if (choiceBased) {
+        const d = { ...draft, selected: n };
+        setDraft(d);
+        check(d);
+      } else if (type === 'multiple_select')
+        setDraft((d) => {
+          const multi = new Set(d.multi);
+          if (multi.has(n)) multi.delete(n);
+          else multi.add(n);
+          return { ...d, multi };
         });
-        const data = await res.json();
-        if (!res.ok)
-          throw new Error(data.error || 'Could not save quiz results.');
-        setScore(data);
-        setQuizComplete(true);
-        onQuizComplete?.(data, questions);
-      } catch {
-        setSubmitError(
-          'Your answers are still here. Could not save the quiz results; try See Results again.',
-        );
-      } finally {
-        setIsSubmitting(false);
-      }
-    } else {
-      setUserAnswers(newAnswers);
-      setCurrentIndex((i) => i + 1);
-      setSelectedAnswer(null);
-      setSelectedAnswers(new Set());
-      setTypedAnswer('');
-      setShowResult(false);
-    }
-  };
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [
+    check,
+    checked,
+    choiceBased,
+    draft,
+    next,
+    question.choices.length,
+    ready,
+    type,
+  ]);
 
+  const correct = checked && results[index];
+  const correctSet = new Set(
+    type === 'multiple_select'
+      ? (question.correct_answers ?? [])
+      : [question.correct_answer],
+  );
   return (
-    <div>
-      {submitError && (
-        <p role="alert" className="inline-error">
-          {submitError}
-        </p>
-      )}
-      {/* Progress bar */}
-      <div className="mb-6">
-        <div className="mb-2 flex justify-between text-sm text-zinc-500">
-          <span>
-            Question {currentIndex + 1} of {questions.length}
-          </span>
-          <span>{Math.round((currentIndex / questions.length) * 100)}%</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-white/5">
-          <div
-            className="h-1.5 rounded-full bg-emerald-300 transition-all"
-            style={{
-              width: `${(currentIndex / questions.length) * 100}%`,
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Question type badge */}
-      <div className="mb-3">
-        <span className="inline-block rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400 border border-white/10">
-          {questionType === 'mcq' && 'Multiple Choice'}
-          {questionType === 'multiple_select' && 'Select All That Apply'}
-          {questionType === 'short_answer' && 'Short Answer'}
-          {questionType === 'nclex' && 'NCLEX Style'}
-          {questionType === 'engineering' && 'Engineering Workout'}
+    <div className="quiz-player">
+      <div className="quiz-progress">
+        <button className="text-button" onClick={onQuit}>
+          End quiz
+        </button>
+        <ol aria-label="Progress">
+          {questions.map((q, i) => (
+            <li
+              key={q.id}
+              className={
+                i < results.length
+                  ? results[i]
+                    ? 'is-right'
+                    : 'is-wrong'
+                  : i === index
+                    ? 'is-current'
+                    : ''
+              }
+            />
+          ))}
+        </ol>
+        <span className="mono">
+          {index + 1}/{questions.length}
         </span>
       </div>
 
-      {/* Question */}
-      <h2 className="mb-6 text-lg font-semibold text-zinc-100">
-        {question.question}
-      </h2>
+      <article className="quiz-question" key={question.id}>
+        <span className="chip">{TYPE_LABELS[type]}</span>
+        <h2>{question.question}</h2>
 
-      {/* MCQ choices */}
-      {questionType === 'mcq' && (
-        <div className="space-y-3">
-          {question.choices.map((choice, i) => {
-            let style = 'glass glass-hover';
-            if (showResult) {
-              if (i === question.correct_answer) {
-                style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
-              } else if (
-                i === selectedAnswer &&
-                i !== question.correct_answer
-              ) {
-                style = 'border-red-500/40 bg-red-500/10';
-              } else {
-                style = 'glass opacity-40';
-              }
-            } else if (i === selectedAnswer) {
-              style = 'border-purple-500/40 bg-purple-500/10 glow-purple';
-            }
-
-            return (
-              <button
-                key={i}
-                onClick={() => handleMCQSelect(i)}
-                disabled={showResult}
-                className={`flex w-full items-center gap-3 rounded-xl p-4 text-left transition-all ${style}`}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
-                  {choiceLabels[i]}
-                </span>
-                <span className="text-zinc-200">{choice}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {questionType === 'nclex' && (
-        <>
-          <div className="space-y-3">
-            {question.choices.map((choice, i) => {
-              let style = 'glass glass-hover';
-              if (showResult) {
-                if (i === question.correct_answer) {
-                  style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
-                } else if (i === selectedAnswer) {
-                  style = 'border-red-500/40 bg-red-500/10';
-                } else {
-                  style = 'glass opacity-40';
-                }
-              } else if (i === selectedAnswer) {
-                style = 'border-emerald-500/40 bg-emerald-500/10';
-              }
-
-              return (
-                <button
-                  key={i}
-                  onClick={() => handleMCQSelect(i)}
-                  disabled={showResult}
-                  className={`flex w-full items-center gap-3 rounded-xl p-4 text-left transition-all ${style}`}
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
-                    {choiceLabels[i]}
-                  </span>
-                  <span className="text-zinc-200">{choice}</span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Multiple select choices */}
-      {questionType === 'multiple_select' && (
-        <>
-          <div className="space-y-3">
-            {question.choices.map((choice, i) => {
-              const isSelected = selectedAnswers.has(i);
-              const correctSet = new Set(question.correct_answers || []);
-
-              let style = 'glass glass-hover';
-              if (showResult) {
-                if (correctSet.has(i)) {
-                  style = 'border-emerald-500/40 bg-emerald-500/10 glow-green';
-                } else if (isSelected && !correctSet.has(i)) {
-                  style = 'border-red-500/40 bg-red-500/10';
-                } else {
-                  style = 'glass opacity-40';
-                }
-              } else if (isSelected) {
-                style = 'border-purple-500/40 bg-purple-500/10 glow-purple';
-              }
-
-              return (
-                <button
-                  key={i}
-                  onClick={() => handleMultiSelectToggle(i)}
-                  disabled={showResult}
-                  className={`flex w-full items-center gap-3 rounded-xl p-4 text-left transition-all ${style}`}
-                >
-                  <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs ${
-                      isSelected
-                        ? 'border-purple-500 bg-purple-500 text-white'
-                        : 'border-zinc-600'
-                    }`}
-                  >
-                    {isSelected && '\u2713'}
-                  </span>
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sm font-medium text-zinc-400">
-                    {choiceLabels[i]}
-                  </span>
-                  <span className="text-zinc-200">{choice}</span>
-                </button>
-              );
-            })}
-          </div>
-          {!showResult && (
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={selectedAnswers.size === 0}
-              className="mt-4 rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
-            >
-              Submit Answer
-            </button>
-          )}
-        </>
-      )}
-
-      {/* Short answer input */}
-      {questionType === 'short_answer' && (
-        <>
-          <div className="mb-4">
-            <input
-              type="text"
-              value={typedAnswer}
-              onChange={(e) => setTypedAnswer(e.target.value)}
-              disabled={showResult}
-              placeholder="Type your answer..."
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && typedAnswer.trim() && !showResult) {
-                  handleSubmitAnswer();
-                }
-              }}
-              className="w-full rounded-xl glass px-4 py-3 text-base text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-purple-500/40 focus:glow-purple disabled:opacity-60"
-            />
-          </div>
-          {!showResult && (
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!typedAnswer.trim()}
-              className="rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
-            >
-              Submit Answer
-            </button>
-          )}
-        </>
-      )}
-
-      {questionType === 'engineering' && (
-        <>
-          <div className="mb-4 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300/80">
-              Solve
-            </p>
-            <p className="mt-1 text-sm text-zinc-300">
-              Enter the numeric result
-              {question.answer_unit ? ` in ${question.answer_unit}` : ''}.
-            </p>
-          </div>
-          <div className="mb-4 flex gap-2">
-            <input
-              type="text"
-              value={typedAnswer}
-              onChange={(e) => setTypedAnswer(e.target.value)}
-              disabled={showResult}
-              placeholder="Enter numerical value..."
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && typedAnswer.trim() && !showResult) {
-                  handleSubmitAnswer();
-                }
-              }}
-              className="flex-1 rounded-xl glass px-4 py-3 text-base text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-amber-500/40 disabled:opacity-60"
-            />
-            {question.answer_unit && (
-              <span className="flex items-center rounded-xl glass px-3 text-sm font-mono text-zinc-400">
-                {question.answer_unit}
-              </span>
-            )}
-          </div>
-          {!showResult && (
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!typedAnswer.trim()}
-              className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-2.5 text-sm font-medium text-white transition-all  disabled:opacity-50"
-            >
-              Submit Answer
-            </button>
-          )}
-        </>
-      )}
-
-      {/* Result feedback */}
-      {showResult && (
-        <div className="mt-6 animate-fade-in">
-          {isCurrentCorrect() ? (
-            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-emerald-400">
-              Correct!
-            </div>
-          ) : (
-            <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-red-400">
-              {questionType === 'mcq' && (
-                <>
-                  Incorrect. The correct answer is{' '}
-                  {choiceLabels[question.correct_answer]}:{' '}
-                  {question.choices[question.correct_answer]}
-                </>
-              )}
-              {questionType === 'multiple_select' && (
-                <>
-                  Incorrect. The correct answers are:{' '}
-                  {(question.correct_answers || [])
-                    .map((i) => `${choiceLabels[i]}: ${question.choices[i]}`)
-                    .join(', ')}
-                </>
-              )}
-              {questionType === 'short_answer' && (
-                <>
-                  Incorrect. The correct answer is:{' '}
-                  {question.correct_answer_text}
-                </>
-              )}
-              {questionType === 'nclex' && (
-                <>
-                  Incorrect. The best answer is{' '}
-                  {choiceLabels[question.correct_answer]}:{' '}
-                  {question.choices[question.correct_answer]}
-                </>
-              )}
-              {questionType === 'engineering' && (
-                <>
-                  Incorrect. The correct answer is: {question.numeric_answer}{' '}
-                  {question.answer_unit}
-                </>
-              )}
-            </div>
-          )}
-
-          {question.explanation &&
-            (questionType === 'nclex' ? (
-              <div className="mt-4">
-                <NclexRationaleCard
-                  text={question.explanation}
-                  variant="quiz"
-                />
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-zinc-500">
-                {question.explanation}
-              </p>
-            ))}
-
-          <button
-            onClick={handleNext}
-            disabled={isSubmitting}
-            className="mt-4 rounded-xl bg-emerald-300 px-6 py-2.5 text-sm font-medium text-white transition-all "
+        {(choiceBased || type === 'multiple_select') && (
+          <div
+            className={`quiz-choices ${type === 'multiple_select' ? 'is-multi' : ''}`}
+            role={choiceBased ? 'radiogroup' : 'group'}
           >
-            {currentIndex === questions.length - 1
-              ? 'See Results'
-              : 'Next Question'}
+            {question.choices.map((choice, i) => {
+              const picked = choiceBased
+                ? draft.selected === i
+                : draft.multi.has(i);
+              const state = !checked
+                ? picked
+                  ? 'is-picked'
+                  : ''
+                : correctSet.has(i)
+                  ? 'is-right'
+                  : picked
+                    ? 'is-wrong'
+                    : 'is-dim';
+              return (
+                <button
+                  key={i}
+                  className={`quiz-choice ${state}`}
+                  role={choiceBased ? 'radio' : 'checkbox'}
+                  aria-checked={picked}
+                  disabled={checked}
+                  onClick={() => {
+                    if (choiceBased) {
+                      const d = { ...draft, selected: i };
+                      setDraft(d);
+                      check(d);
+                    } else
+                      setDraft((d) => {
+                        const multi = new Set(d.multi);
+                        if (multi.has(i)) multi.delete(i);
+                        else multi.add(i);
+                        return { ...d, multi };
+                      });
+                  }}
+                >
+                  <span className="quiz-letter mono">
+                    {checked && correctSet.has(i) ? (
+                      <Icon name="check" size={14} />
+                    ) : checked && picked ? (
+                      <Icon name="close" size={14} />
+                    ) : (
+                      LETTERS[i]
+                    )}
+                  </span>
+                  <span>{choice}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {(type === 'short_answer' || type === 'engineering') && (
+          <form
+            className="quiz-typed"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (ready) check();
+            }}
+          >
+            <input
+              ref={input}
+              className={`input ${checked ? (correct ? 'is-right' : 'is-wrong') : ''}`}
+              value={draft.typed}
+              disabled={checked}
+              inputMode={type === 'engineering' ? 'decimal' : 'text'}
+              autoComplete="off"
+              placeholder={
+                type === 'engineering' ? 'Your numeric result' : 'Your answer'
+              }
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, typed: e.target.value }))
+              }
+            />
+            {type === 'engineering' && question.answer_unit && (
+              <span className="quiz-unit mono">{question.answer_unit}</span>
+            )}
+          </form>
+        )}
+
+        {!checked && !choiceBased && (
+          <button
+            className="primary-button quiz-check"
+            disabled={!ready}
+            onClick={() => check()}
+          >
+            Check answer <kbd className="kbd">↵</kbd>
           </button>
-        </div>
+        )}
+        {!checked && choiceBased && (
+          <p className="quiz-hint muted">
+            Pick an answer, or press <kbd className="kbd">1</kbd>–
+            <kbd className="kbd">{question.choices.length}</kbd>
+          </p>
+        )}
+      </article>
+
+      {checked && (
+        <section
+          className={`quiz-feedback ${correct ? 'is-right' : 'is-wrong'}`}
+          role="status"
+        >
+          <h3>
+            {correct ? (
+              <>
+                <Icon name="check" size={20} /> Correct
+              </>
+            ) : (
+              <>Not quite</>
+            )}
+          </h3>
+          {!correct && (type === 'short_answer' || type === 'engineering') && (
+            <p className="quiz-answer">
+              Answer:{' '}
+              <strong>
+                {type === 'engineering'
+                  ? `${question.numeric_answer} ${question.answer_unit ?? ''}`
+                  : question.correct_answer_text}
+              </strong>
+            </p>
+          )}
+          {question.explanation &&
+            (type === 'nclex' ? (
+              <NclexRationaleCard text={question.explanation} />
+            ) : (
+              <p>{question.explanation}</p>
+            ))}
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className="primary-button"
+            onClick={next}
+            disabled={submitting}
+            autoFocus
+          >
+            {submitting ? 'Saving…' : last ? 'See results' : 'Next question'}{' '}
+            <kbd className="kbd">↵</kbd>
+          </button>
+        </section>
       )}
     </div>
   );

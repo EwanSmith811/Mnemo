@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
 import AudioBubble from '@/components/AudioBubble';
+import { BackLink, Icon, stagger } from '@/components/ui';
 
 // ── Voice options ────────────────────────────────────────────────
 const VOICES = [
@@ -156,7 +156,7 @@ export default function VerbalQuizPage() {
 
   // ── Send message to LLM (streaming) ───────────────────────────
   const sendToLLM = useCallback(
-    async (allMessages: Message[]) => {
+    async (allMessages: Message[], activeMode: Mode | null = mode) => {
       setIsStreaming(true);
       setCurrentText('');
       setError(null);
@@ -170,12 +170,12 @@ export default function VerbalQuizPage() {
               role: m.role,
               content: m.content,
             })),
-            mode,
+            mode: activeMode,
           }),
         });
 
         if (!res.ok) {
-          throw new Error('Failed to get AI response');
+          throw new Error('Mnemo could not respond. Please try again.');
         }
 
         const reader = res.body?.getReader();
@@ -412,319 +412,201 @@ export default function VerbalQuizPage() {
           { role: 'user', content: 'Start the quiz.' },
         ];
         setMessages(initMessages);
-        // Need to defer to let mode state update
-        setTimeout(() => {
-          sendToLLM(initMessages);
-        }, 0);
+        void sendToLLM(initMessages, selectedMode);
       }
     },
     [sendToLLM],
   );
 
-  // ── Mode selection screen ──────────────────────────────────────
-  if (!mode) {
+  const stopAudio = () => {
+    audioElementRef.current?.pause();
+    audioElementRef.current?.removeAttribute('src');
+    audioQueueRef.current = [];
+    isPlayingQueueRef.current = false;
+    setIsSpeaking(false);
+  };
+
+  if (!mode)
     return (
-      <div className="min-h-screen px-6 py-12">
-        <div className="mx-auto max-w-3xl">
-          <Link
-            href={`/documents/${documentId}`}
-            className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Back to document
-          </Link>
-
-          <div className="mb-10 animate-fade-in-up">
-            <h1 className="mb-2 text-3xl font-bold gradient-text-indigo">
-              Verbal Quiz
+      <main className="page is-reading voice-setup">
+        <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
+        <header className="page-head">
+          <div>
+            <span className="eyebrow">
+              <b>●</b> Voice practice
+            </span>
+            <h1>
+              Say it <em>out loud.</em>
             </h1>
-            <p className="text-zinc-500">
-              Have a voice conversation with AI about your study material.
+            <p className="lede">
+              If you can explain it clearly without notes, you understand it. If
+              you stumble, you’ve found exactly what to study next.
             </p>
-            <div className="mt-3 glow-line-indigo w-20" />
           </div>
-
-          {/* Voice selector */}
-          <div className="mb-8 animate-fade-in-up delay-100">
-            <label className="mb-3 block text-sm font-medium text-zinc-400">
-              AI Voice
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {VOICES.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setVoiceId(v.id)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                    voiceId === v.id
-                      ? 'bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40'
-                      : 'glass text-zinc-400 hover:text-zinc-200 glass-hover'
-                  }`}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Mode cards */}
-          <div className="grid gap-5 sm:grid-cols-2 animate-fade-in-up delay-200">
-            {/* User Explains */}
-            <button
-              onClick={() => startSession('user_explains')}
-              className="group relative overflow-hidden rounded-2xl glass p-6 text-left transition-all duration-300 glass-hover hover-glow-blue"
-            >
-              <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20 opacity-50 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
-              <div className="relative">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-400">
-                  <svg
-                    className="h-6 w-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                    />
-                  </svg>
-                </div>
-                <h2 className="mb-1 text-lg font-semibold text-zinc-100">
-                  You Explain
-                </h2>
-                <p className="text-sm text-zinc-500">
-                  Explain a topic verbally. The AI will evaluate your
-                  understanding and probe for gaps.
-                </p>
-              </div>
-            </button>
-
-            {/* AI Quizzes */}
-            <button
-              onClick={() => startSession('ai_quizzes')}
-              className="group relative overflow-hidden rounded-2xl glass p-6 text-left transition-all duration-300 glass-hover hover-glow-purple"
-            >
-              <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 opacity-50 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
-              <div className="relative">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400">
-                  <svg
-                    className="h-6 w-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                    />
-                  </svg>
-                </div>
-                <h2 className="mb-1 text-lg font-semibold text-zinc-100">
-                  AI Quizzes You
-                </h2>
-                <p className="text-sm text-zinc-500">
-                  The AI picks topics and asks you questions conversationally.
-                  Answer verbally.
-                </p>
-              </div>
-            </button>
-          </div>
+        </header>
+        <div className="voice-modes">
+          <button
+            className="card voice-mode rise"
+            onClick={() => startSession('user_explains')}
+          >
+            <span className="voice-mode-art" aria-hidden>
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="eyebrow">You talk</span>
+            <h2>Teach it back</h2>
+            <p>
+              Pick a topic and explain it as if to a classmate. Mnemo listens,
+              then tells you what was right, what was missing, and what to fix.
+            </p>
+            <span className="arrow" aria-hidden>
+              ↗
+            </span>
+          </button>
+          <button
+            className="card voice-mode rise"
+            style={stagger(1)}
+            onClick={() => startSession('ai_quizzes')}
+          >
+            <span className="voice-mode-art is-question" aria-hidden>
+              ?
+            </span>
+            <span className="eyebrow">Mnemo asks</span>
+            <h2>Quiz me</h2>
+            <p>
+              Mnemo asks questions from your deck one at a time and responds to
+              each answer, like a study partner with the notes in front of them.
+            </p>
+            <span className="arrow" aria-hidden>
+              ↗
+            </span>
+          </button>
         </div>
-      </div>
-    );
-  }
-
-  // ── Active session screen ──────────────────────────────────────
-  const isBusy = isProcessing || isStreaming;
-
-  return (
-    <div className="flex min-h-screen flex-col px-6 py-12">
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => {
-                setMode(null);
-                if (audioElementRef.current) {
-                  audioElementRef.current.pause();
-                  audioElementRef.current.removeAttribute('src');
-                }
-                audioQueueRef.current = [];
-                isPlayingQueueRef.current = false;
-                setIsSpeaking(false);
-              }}
-              className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold text-zinc-100">
-                {mode === 'user_explains' ? 'You Explain' : 'AI Quizzes You'}
-              </h1>
-              <p className="text-xs text-zinc-500">
-                {mode === 'user_explains'
-                  ? 'Explain any topic and get feedback'
-                  : "Answer the AI's questions"}
-              </p>
-            </div>
-          </div>
-
-          {/* Voice switcher */}
-          <div className="flex items-center gap-2">
+        <div className="voice-voices">
+          <span className="eyebrow">Voice</span>
+          <div className="segmented">
             {VOICES.map((v) => (
               <button
                 key={v.id}
+                aria-pressed={voiceId === v.id}
                 onClick={() => setVoiceId(v.id)}
-                title={v.label}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
-                  voiceId === v.id
-                    ? 'bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40'
-                    : 'text-zinc-600 hover:text-zinc-400'
-                }`}
               >
                 {v.label}
               </button>
             ))}
           </div>
+          <small className="muted">
+            Spoken replies use an AI-generated voice.
+          </small>
         </div>
+      </main>
+    );
 
-        {/* Messages area */}
-        <div className="flex-1 overflow-y-auto rounded-2xl glass p-5 mb-6">
-          <div className="space-y-4">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-blue-500/15 text-blue-100'
-                      : 'bg-white/5 text-zinc-300'
-                  }`}
-                >
-                  {/* Hide the "Start the quiz." trigger message */}
-                  {msg.role === 'user' && msg.content === 'Start the quiz.' ? (
-                    <span className="italic text-zinc-500">
-                      Session started
-                    </span>
-                  ) : (
-                    msg.content
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Streaming text */}
-            {currentText && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-2xl bg-white/5 px-4 py-3 text-sm leading-relaxed text-zinc-300">
-                  {currentText}
-                  <span className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-purple-400" />
-                </div>
-              </div>
-            )}
-
-            {/* Processing indicator */}
-            {isProcessing && (
-              <div className="flex justify-center">
-                <span className="rounded-full glass px-4 py-2 text-xs text-zinc-500">
-                  Transcribing...
-                </span>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
+  const isBusy = isProcessing || isStreaming;
+  const state = isRecording
+    ? 'Listening… tap to finish'
+    : isProcessing
+      ? 'Transcribing what you said'
+      : isStreaming
+        ? 'Mnemo is thinking'
+        : isSpeaking
+          ? 'Mnemo is speaking · tap to interrupt'
+          : 'Tap to talk';
+  return (
+    <main className="voice-session">
+      <div className="voice-top">
+        <button
+          className="ghost-button is-small"
+          onClick={() => {
+            stopRecording();
+            stopAudio();
+            setMode(null);
+          }}
+        >
+          ← End session
+        </button>
+        <span className="eyebrow">
+          <b>●</b> {mode === 'user_explains' ? 'Teach it back' : 'Quiz me'}
+        </span>
+        <div className="segmented">
+          {VOICES.map((v) => (
+            <button
+              key={v.id}
+              aria-pressed={voiceId === v.id}
+              onClick={() => setVoiceId(v.id)}
+            >
+              {v.label.split(' ')[0]}
+            </button>
+          ))}
         </div>
-
-        {/* Audio bubble + controls */}
-        <div className="flex flex-col items-center gap-4 pb-6">
-          {error && (
-            <p className="rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400">
-              {error}
+      </div>
+      <div className="voice-thread">
+        {messages
+          .filter(
+            (m, i) =>
+              !(
+                i === 0 &&
+                m.role === 'user' &&
+                m.content === 'Start the quiz.'
+              ),
+          )
+          .map((m, i) => (
+            <div key={i} className={`chat-message is-${m.role}`}>
+              <p>{m.content}</p>
+            </div>
+          ))}
+        {currentText && (
+          <div className="chat-message is-assistant">
+            <p>
+              {currentText}
+              <span className="voice-caret" />
             </p>
-          )}
-
+          </div>
+        )}
+        {!messages.length && !currentText && (
+          <p className="voice-prompt">
+            {mode === 'user_explains'
+              ? 'Pick any idea from the deck. Tap the button and start explaining.'
+              : 'Getting your first question ready…'}
+          </p>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="voice-controls">
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          className={`voice-record ${isRecording ? 'is-recording' : ''} ${isSpeaking ? 'is-speaking' : ''}`}
+          disabled={isBusy && !isRecording}
+          aria-pressed={isRecording}
+          aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+          onClick={() => {
+            if (isRecording) stopRecording();
+            else {
+              stopAudio();
+              void startRecording();
+            }
+          }}
+        >
           <AudioBubble
             isSpeaking={isSpeaking}
             isRecording={isRecording}
-            size={160}
+            size={168}
           />
-
-          {/* Record button */}
-          <button
-            onMouseDown={!isBusy ? startRecording : undefined}
-            onMouseUp={isRecording ? stopRecording : undefined}
-            onTouchStart={!isBusy ? startRecording : undefined}
-            onTouchEnd={isRecording ? stopRecording : undefined}
-            disabled={isBusy}
-            className={`group relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-200 ${
-              isRecording
-                ? 'bg-red-500/30 ring-2 ring-red-500 scale-110'
-                : isBusy
-                  ? 'bg-white/5 text-zinc-600 cursor-not-allowed'
-                  : 'bg-white/10 text-zinc-300 hover:bg-white/15 hover:scale-105 active:scale-95'
-            }`}
-          >
-            {isRecording ? (
-              <div className="h-5 w-5 rounded-sm bg-red-400" />
-            ) : (
-              <svg
-                className="h-6 w-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                />
-              </svg>
-            )}
-          </button>
-
-          <p className="text-xs text-zinc-600">
-            {isRecording
-              ? 'Release to send'
-              : isBusy
-                ? 'Processing...'
-                : 'Hold to speak'}
-          </p>
-        </div>
+          <span className="voice-record-icon">
+            <Icon name={isRecording ? 'stop' : 'mic'} size={26} />
+          </span>
+        </button>
+        <p className="voice-state" role="status">
+          {isBusy && <span className="loading-spinner" />} {state}
+        </p>
       </div>
-    </div>
+    </main>
   );
 }

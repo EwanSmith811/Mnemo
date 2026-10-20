@@ -15,7 +15,10 @@ export async function GET(
     .order('next_review_date', { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not load flashcards.' },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json(data);
@@ -49,7 +52,10 @@ export async function POST(
     .eq('document_id', documentId);
 
   if (countError) {
-    return NextResponse.json({ error: countError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not check the flashcard limit.' },
+      { status: 500 },
+    );
   }
 
   if ((count ?? 0) >= MAX_GENERATED_FLASHCARDS) {
@@ -70,7 +76,10 @@ export async function POST(
     .single();
 
   if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not save the flashcard.' },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json(card, { status: 201 });
