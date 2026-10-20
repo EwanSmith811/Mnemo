@@ -215,9 +215,6 @@ summary {
   animation: rise 0.7s var(--ease-out) both;
   animation-delay: calc(var(--i, 0) * 70ms);
 }
-.fade-in {
-  animation: fade 0.5s var(--ease-out) both;
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,

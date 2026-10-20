@@ -33,8 +33,7 @@
   letter-spacing: -0.012em;
   line-height: 1.02;
 }
-.display em,
-.serif-em {
+.display em {
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 400;

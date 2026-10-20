@@ -77,11 +77,6 @@ export interface TopicSummary {
   created_at: string;
 }
 
-export interface QuizSettings {
-  questionCount: number;
-  questionTypes: QuestionType[];
-}
-
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;

@@ -26,7 +26,7 @@ export class Narrator {
   constructor(
     private voice: string,
     private onState: (state: NarratorState) => void,
-    private onScene: (scene: number, chunk: number) => void,
+    private onScene: (scene: number) => void,
     private onError: (message: string) => void,
   ) {
     this.audio.addEventListener('ended', () => this.advance());
@@ -35,11 +35,9 @@ export class Narrator {
 
   /** Add a scene's chunks. Resumes automatically if playback was waiting. */
   append(scene: number, chunks: string[]) {
-    const first = this.chunks.length;
     for (const text of chunks) this.chunks.push({ text, scene });
     if (this.state === 'waiting') void this.playCurrent();
     else if (this.state === 'playing') this.prefetch();
-    return first;
   }
 
   /** The story is fully written; running out of chunks now means the end. */
@@ -136,7 +134,7 @@ export class Narrator {
     }
     this.audio.pause();
     this.set('loading');
-    this.onScene(chunk.scene, this.index);
+    this.onScene(chunk.scene);
     this.prefetch();
     try {
       const url = await this.fetchAudio(chunk);

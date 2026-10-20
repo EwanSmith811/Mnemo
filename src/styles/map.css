@@ -501,28 +501,6 @@
   font-size: 13px;
   pointer-events: none;
 }
-.story-panel {
-  display: grid;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-}
-.story-panel > p,
-.upload-help {
-  font-size: 12.5px;
-  color: var(--ink-3);
-}
-.story-text {
-  white-space: pre-wrap;
-  font-family: var(--font-display);
-  font-size: 19px;
-  line-height: 1.5;
-}
-.story-audio {
-  width: 100%;
-}
-
 @media (max-width: 1100px) {
   .map-toolbar {
     top: 76px;
