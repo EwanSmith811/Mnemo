@@ -1,18 +1,11 @@
 'use client';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalFocus } from '@/lib/use-modal-focus';
 import {
   splitForSpeech,
-  speakable,
-  storySegments,
-  type CastMember,
+  termSegments,
+  type StoryBit,
   type StoryEvent,
 } from '@/lib/memory-story';
 import { Narrator, type NarratorState } from './narrator';
@@ -28,39 +21,24 @@ const VOICES = [
   ['male', 'Onyx'],
   ['woman', 'Coral'],
 ] as const;
-const TITLE_SCENE = -2;
-const CAST_SCENE = -1;
-const MORAL_SCENE = 1000;
-
-function Ornament({ seed }: { seed: number }) {
-  // A small hand-drawn divider; the shape varies so scenes don't feel stamped.
-  const paths = [
-    'M4 12c8-8 16 8 24 0s16 8 24 0 16 8 24 0',
-    'M4 12h22m8 0h0m8 0h22',
-    'M4 14c10-10 20-10 30 0s20 10 38-2',
-  ];
-  return (
-    <svg className="story-ornament" viewBox="0 0 80 24" aria-hidden>
-      <path d={paths[seed % paths.length]} />
-      <circle cx="40" cy="12" r="3" />
-    </svg>
-  );
-}
+const TITLE_SCENE = -1;
+const ENCORE_SCENE = 1000;
 
 export default function StoryTheater({
   documentId,
   concepts,
+  interests,
   onClose,
 }: {
   documentId: string;
   concepts: TheaterConcept[];
+  interests: string;
   onClose: () => void;
 }) {
   const [attempt, setAttempt] = useState(0);
   const [title, setTitle] = useState('');
-  const [cast, setCast] = useState<CastMember[]>([]);
-  const [scenes, setScenes] = useState<string[]>([]);
-  const [moral, setMoral] = useState('');
+  const [bits, setBits] = useState<StoryBit[]>([]);
+  const [encore, setEncore] = useState('');
   const [status, setStatus] = useState<'writing' | 'done' | 'error'>('writing');
   const [error, setError] = useState('');
   const [voice, setVoice] = useState<string>('alloy');
@@ -72,48 +50,29 @@ export default function StoryTheater({
   const narrator = useRef<Narrator | null>(null);
   const voiceRef = useRef(voice);
   const sceneRefs = useRef(new Map<number, HTMLElement>());
-  // Narrator chunk index -> cast member announced in the roll call.
-  const rollCall = useRef(new Map<number, number>());
-  const [announced, setAnnounced] = useState<number | null>(null);
   const panel = useModalFocus(true, onClose);
 
-  // Write (or rewrite) the story, feeding the narrator as each piece lands.
+  // Write (or rewrite) the riffs, feeding the narrator as each one lands.
   useEffect(() => {
     const abort = new AbortController();
     const n = new Narrator(
       voiceRef.current,
       setNarration,
-      (scene, chunk) => {
-        setActiveScene(scene);
-        setAnnounced(rollCall.current.get(chunk) ?? null);
-      },
+      setActiveScene,
       setNotice,
     );
     narrator.current = n;
-    rollCall.current = new Map();
-    let sceneCount = 0;
-    let billed = 0;
+    let count = 0;
     const handle = (event: StoryEvent) => {
       if (event.type === 'title') {
         setTitle(event.text);
         n.append(TITLE_SCENE, [event.text + '.']);
-      } else if (event.type === 'cast') {
-        setCast((c) => [...c, event]);
-        // A roll call fills the wait for scene one and pairs each name with
-        // its concept, which is the whole point of the story.
-        const member = billed++;
-        rollCall.current.set(
-          n.append(CAST_SCENE, [
-            `${member === 0 ? 'Starring ' : ''}${event.name}, as ${event.concept}.`,
-          ]),
-          member,
-        );
-      } else if (event.type === 'scene') {
-        setScenes((s) => [...s, event.text]);
-        n.append(event.index, splitForSpeech(event.text, sceneCount++ === 0));
-      } else if (event.type === 'moral') {
-        setMoral(event.text);
-        n.append(MORAL_SCENE, splitForSpeech(event.text));
+      } else if (event.type === 'bit') {
+        setBits((b) => [...b, event]);
+        n.append(count, splitForSpeech(event.line, count++ === 0));
+      } else if (event.type === 'encore') {
+        setEncore(event.text);
+        n.append(ENCORE_SCENE, splitForSpeech(event.text));
       } else if (event.type === 'done') {
         setStatus('done');
         n.finish();
@@ -124,12 +83,15 @@ export default function StoryTheater({
         method: 'POST',
         signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conceptIds: concepts.map((c) => c.id) }),
+        body: JSON.stringify({
+          conceptIds: concepts.map((c) => c.id),
+          interests,
+        }),
       });
       if (!res.ok || !res.body)
         throw new Error(
           (await res.json().catch(() => null))?.error ||
-            'Could not write the story.',
+            'Could not write the riffs.',
         );
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -154,7 +116,7 @@ export default function StoryTheater({
       abort.abort();
       n.destroy();
     };
-  }, [documentId, concepts, attempt]);
+  }, [documentId, concepts, interests, attempt]);
 
   // Voice changes go to the live narrator rather than rewriting the story.
   useEffect(() => {
@@ -179,22 +141,8 @@ export default function StoryTheater({
     return () => window.removeEventListener('keydown', key);
   }, [narration]);
 
-  // Character names → cast number and topic color.
-  const characters = useMemo(() => {
-    const map = new Map<
-      string,
-      { n: number; color: string; concept: string }
-    >();
-    cast.forEach((c, i) =>
-      map.set(c.name.toLowerCase(), {
-        n: i + 1,
-        concept: c.concept,
-        color:
-          concepts.find((x) => x.id === c.conceptId)?.color ?? 'var(--accent)',
-      }),
-    );
-    return map;
-  }, [cast, concepts]);
+  const colorOf = (id: string) =>
+    concepts.find((c) => c.id === id)?.color ?? 'var(--accent)';
 
   const narrating = narration !== 'idle' && narration !== 'done';
   const playLabel =
@@ -211,11 +159,14 @@ export default function StoryTheater({
               : 'Read it aloud';
   const fullText = [
     title,
-    ...scenes.map(speakable),
-    moral,
-    '',
-    ...cast.map((c) => `${c.name} = ${c.concept}: ${c.meaning}`),
+    ...bits.map(
+      (b, i) => `${i + 1}. ${b.line}\n   (${b.concept}: ${b.meaning})`,
+    ),
+    encore,
   ].join('\n\n');
+  const pending = concepts.filter(
+    (c) => !bits.some((b) => b.conceptId === c.id),
+  );
 
   return createPortal(
     <div
@@ -223,17 +174,17 @@ export default function StoryTheater({
       className="story-theater"
       role="dialog"
       aria-modal="true"
-      aria-label="Memory story"
+      aria-label="Memory riffs"
       tabIndex={-1}
     >
       <header className="story-bar">
         <span className="eyebrow">
-          <b>●</b> Memory story · {concepts.length} concepts
+          Memory riffs · {concepts.length} concepts
         </span>
         <div className="story-bar-tools">
           <button
             className={`primary-button story-play ${narration === 'playing' ? 'is-playing' : ''}`}
-            disabled={!scenes.length && !title}
+            disabled={!bits.length && !title}
             onClick={() =>
               narration === 'playing'
                 ? narrator.current?.pause()
@@ -273,7 +224,7 @@ export default function StoryTheater({
           </div>
           <button
             className="icon-button"
-            aria-label="Close story"
+            aria-label="Close memory riffs"
             onClick={onClose}
           >
             <Icon name="close" />
@@ -281,81 +232,8 @@ export default function StoryTheater({
         </div>
       </header>
 
-      <div className="story-stage">
-        <aside className="story-cast" aria-label="Cast">
-          <div className="story-cast-head">
-            <span className="eyebrow">The cast</span>
-            {cast.length > 0 && (
-              <button
-                className="text-button"
-                aria-pressed={quiz}
-                onClick={() => {
-                  setQuiz((q) => !q);
-                  setRevealed(new Set());
-                }}
-              >
-                {quiz ? 'Show all answers' : 'Quiz me on the cast'}
-              </button>
-            )}
-          </div>
-          <ol>
-            {cast.map((c, i) => {
-              const hidden = quiz && !revealed.has(i);
-              const color = characters.get(c.name.toLowerCase())?.color;
-              return (
-                <li
-                  key={i}
-                  className={`story-cast-card ${narrating && activeScene === CAST_SCENE && announced === i ? 'is-announced' : ''}`}
-                  ref={(el) => {
-                    if (
-                      el &&
-                      narrating &&
-                      activeScene === CAST_SCENE &&
-                      announced === i
-                    )
-                      el.scrollIntoView({
-                        block: 'nearest',
-                        behavior: 'smooth',
-                      });
-                  }}
-                  style={{ '--c': color, '--i': i } as CSSProperties}
-                >
-                  <span className="story-cast-n mono">{i + 1}</span>
-                  <strong>{c.name}</strong>
-                  {hidden ? (
-                    <button
-                      className="story-cast-reveal"
-                      onClick={() => setRevealed((r) => new Set(r).add(i))}
-                    >
-                      Who is this really? Tap to check
-                    </button>
-                  ) : (
-                    <span className="story-cast-term">
-                      <em>is</em> {c.concept}
-                      {c.meaning && <small>{c.meaning}</small>}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-            {status === 'writing' &&
-              concepts
-                .filter((c) => !cast.some((m) => m.conceptId === c.id))
-                .map((c) => (
-                  <li
-                    key={c.id}
-                    className="story-cast-card is-pending"
-                    style={{ '--c': c.color } as CSSProperties}
-                  >
-                    <span className="story-cast-n mono">?</span>
-                    <strong>Auditioning…</strong>
-                    <span className="story-cast-term">{c.label}</span>
-                  </li>
-                ))}
-          </ol>
-        </aside>
-
-        <article className="story-page">
+      <article className="story-page">
+        <header className="riff-head">
           {title ? (
             <h1
               ref={(el) => {
@@ -368,110 +246,153 @@ export default function StoryTheater({
           ) : (
             status !== 'error' && (
               <div className="story-writing" role="status">
-                <span className="dot is-live" /> Casting {concepts.length} very
-                strange characters…
+                <span className="dot is-live" /> Workshopping {concepts.length}{' '}
+                terrible jokes…
               </div>
             )
           )}
-          {scenes.map((text, i) => (
-            <section
-              key={i}
-              ref={(el) => {
-                if (el) sceneRefs.current.set(i, el);
+          {bits.length > 0 && (
+            <button
+              className="secondary-button is-small"
+              aria-pressed={quiz}
+              onClick={() => {
+                setQuiz((q) => !q);
+                setRevealed(new Set());
               }}
-              className={`story-scene ${narrating ? (activeScene === i ? 'is-active' : 'is-dim') : ''}`}
             >
-              <button
-                className="story-scene-n mono"
-                onClick={() => narrator.current?.seekScene(i)}
-                aria-label={`Read scene ${i + 1} aloud`}
-                title="Read from here"
+              {quiz ? 'Show every answer' : 'Quiz me: hide the terms'}
+            </button>
+          )}
+        </header>
+
+        <ol className="riff-list">
+          {bits.map((bit, i) => {
+            const hidden = quiz && !revealed.has(i);
+            return (
+              <li
+                key={bit.conceptId}
+                ref={(el) => {
+                  if (el) sceneRefs.current.set(i, el);
+                }}
+                className={`riff ${narrating ? (activeScene === i ? 'is-active' : 'is-dim') : ''} ${hidden ? 'is-hidden' : ''}`}
+                style={
+                  { '--c': colorOf(bit.conceptId), '--i': i } as CSSProperties
+                }
               >
-                Scene {String(i + 1).padStart(2, '0')}
-              </button>
-              <p className={i === 0 ? 'has-dropcap' : ''}>
-                {storySegments(text).map((part, j) => {
-                  if (!part.character) return part.text;
-                  const who = characters.get(part.text.toLowerCase());
-                  return (
-                    <mark
-                      key={j}
-                      style={
-                        {
-                          '--c': who?.color ?? 'var(--accent)',
-                        } as CSSProperties
-                      }
-                      title={who ? `${part.text} = ${who.concept}` : undefined}
-                    >
-                      {part.text}
-                      {who && <sup className="mono">{who.n}</sup>}
-                    </mark>
-                  );
-                })}
-              </p>
-              {i < scenes.length - 1 && <Ornament seed={i} />}
-            </section>
-          ))}
-          {status === 'writing' && title && (
-            <div className="story-writing" role="status">
-              <span className="dot is-live" /> Writing scene {scenes.length + 1}
-              …
-            </div>
-          )}
-          {moral && (
-            <blockquote
-              ref={(el) => {
-                if (el) sceneRefs.current.set(MORAL_SCENE, el);
+                <button
+                  className="riff-n mono"
+                  onClick={() => narrator.current?.seekScene(i)}
+                  aria-label={`Read line ${i + 1} aloud`}
+                  title="Read from here"
+                >
+                  {String(i + 1).padStart(2, '0')}
+                </button>
+                <p className="riff-line">
+                  {termSegments(bit.line, bit.concept).map((part, j) =>
+                    !part.term ? (
+                      part.text
+                    ) : hidden ? (
+                      <span
+                        key={j}
+                        className="riff-blank"
+                        aria-label="hidden term"
+                      >
+                        {part.text}
+                      </span>
+                    ) : (
+                      <mark key={j}>{part.text}</mark>
+                    ),
+                  )}
+                </p>
+                {hidden ? (
+                  <button
+                    className="riff-reveal"
+                    onClick={() => setRevealed((r) => new Set(r).add(i))}
+                  >
+                    Which concept is this? Tap to check
+                  </button>
+                ) : (
+                  <p className="riff-meaning">
+                    <strong>{bit.concept}</strong>
+                    {bit.meaning && <span>{bit.meaning}</span>}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+          {status === 'writing' &&
+            title &&
+            pending.slice(0, 3).map((c, i) => (
+              <li
+                key={c.id}
+                className="riff is-pending"
+                style={{ '--c': c.color, '--i': i } as CSSProperties}
+              >
+                <span className="riff-n mono">··</span>
+                <p className="riff-line">
+                  <span className="riff-shimmer" />
+                </p>
+                <p className="riff-meaning">
+                  <strong>{c.label}</strong>
+                  {i === 0 && <span>Writing…</span>}
+                </p>
+              </li>
+            ))}
+        </ol>
+
+        {encore && (
+          <blockquote
+            ref={(el) => {
+              if (el) sceneRefs.current.set(ENCORE_SCENE, el);
+            }}
+            className={`story-moral ${narrating && activeScene === ENCORE_SCENE ? 'is-active' : ''}`}
+          >
+            <span className="eyebrow">Encore</span>
+            {encore}
+          </blockquote>
+        )}
+        {error && (
+          <div className="inline-error" role="alert">
+            <p>{error}</p>
+          </div>
+        )}
+        {notice && <p className="muted story-notice">{notice}</p>}
+        {status !== 'writing' && (
+          <footer className="story-actions">
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setTitle('');
+                setBits([]);
+                setEncore('');
+                setError('');
+                setNotice('');
+                setStatus('writing');
+                setNarration('idle');
+                setActiveScene(null);
+                setAttempt((a) => a + 1);
               }}
-              className={`story-moral ${narrating && activeScene === MORAL_SCENE ? 'is-active' : ''}`}
             >
-              {moral}
-            </blockquote>
-          )}
-          {error && (
-            <div className="inline-error" role="alert">
-              <p>{error}</p>
-            </div>
-          )}
-          {notice && <p className="muted story-notice">{notice}</p>}
-          {status !== 'writing' && (
-            <footer className="story-actions">
+              <Icon name="refresh" size={15} /> Another take
+            </button>
+            {status === 'done' && (
               <button
-                className="secondary-button"
+                className="ghost-button"
                 onClick={() => {
-                  setTitle('');
-                  setCast([]);
-                  setScenes([]);
-                  setMoral('');
-                  setError('');
-                  setNotice('');
-                  setStatus('writing');
-                  setNarration('idle');
-                  setActiveScene(null);
-                  setAttempt((a) => a + 1);
+                  void navigator.clipboard
+                    ?.writeText(fullText)
+                    .then(() => setNotice('Copied.'));
                 }}
               >
-                <Icon name="refresh" size={15} /> Another take
+                Copy the text
               </button>
-              {status === 'done' && (
-                <button
-                  className="ghost-button"
-                  onClick={() => {
-                    void navigator.clipboard
-                      ?.writeText(fullText)
-                      .then(() => setNotice('Story copied.'));
-                  }}
-                >
-                  Copy the text
-                </button>
-              )}
-              <small className="muted">
-                Narration uses an AI-generated voice. Space plays and pauses.
-              </small>
-            </footer>
-          )}
-        </article>
-      </div>
+            )}
+            <small className="muted">
+              Narration uses an AI-generated voice. Space plays and pauses.
+            </small>
+          </footer>
+        )}
+      </article>
     </div>,
     document.body,
   );

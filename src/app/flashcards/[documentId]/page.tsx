@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useParams } from 'next/navigation';
 import FlashcardViewer from '@/components/FlashcardViewer';
 import { AddDialog, GenerateDialog } from '@/components/StudyDialogs';
-import { BackLink, PageLoading } from '@/components/ui';
+import { PageLoading } from '@/components/ui';
+import PracticeTabs from '@/components/PracticeTabs';
 import type { Flashcard, ReviewRating } from '@/types';
 
 const LIMIT = 100;
@@ -101,7 +102,7 @@ export default function FlashcardsPage() {
   if (loading) return <PageLoading label="Shuffling your cards" />;
   return (
     <main className="page is-reading">
-      <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
+      <PracticeTabs documentId={documentId} />
       {session ? (
         <FlashcardViewer
           key={sessionKey}
@@ -113,9 +114,6 @@ export default function FlashcardsPage() {
         <>
           <header className="page-head">
             <div>
-              <span className="eyebrow rise">
-                <b>02</b> Flashcards
-              </span>
               <h1 className="rise">
                 Recall it, <em>then</em> flip.
               </h1>

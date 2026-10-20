@@ -97,9 +97,6 @@ export default function FlashcardViewer({
     const reviewed = Object.values(tally).reduce((a, b) => a + b, 0);
     return (
       <section className="cards-done">
-        <span className="eyebrow">
-          <b>●</b> Session complete
-        </span>
         <h2 className="display">
           {reviewed} {reviewed === 1 ? 'review' : 'reviews'}, <em>done.</em>
         </h2>

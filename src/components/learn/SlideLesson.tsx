@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { DocumentSlide } from '@/lib/document-slides';
 import type {
   SlideExplanation,
@@ -43,11 +43,13 @@ function SelfCheck({
 }) {
   const [attempt, setAttempt] = useState('');
   const [revealed, setRevealed] = useState(false);
+  // Counts fresh "Got it" taps so each one replays the burst.
+  const [cheers, setCheers] = useState(0);
   const rated = status === 'understood' || status === 'shaky';
   return (
     <section className={`self-check ${revealed || !check ? 'is-open' : ''}`}>
       <span className="eyebrow">
-        <b>●</b> {check ? 'Check yourself' : 'How did this slide land?'}
+        {check ? 'Check yourself' : 'How did this slide land?'}
       </span>
       {check && (
         <>
@@ -85,9 +87,7 @@ function SelfCheck({
                 </div>
               )}
               <div>
-                <span className="eyebrow">
-                  <b>Answer</b>
-                </span>
+                <span className="eyebrow">Answer</span>
                 <p>{check.answer}</p>
               </div>
             </div>
@@ -103,9 +103,22 @@ function SelfCheck({
             <button
               className={`rate-button is-good ${status === 'understood' ? 'is-chosen' : ''}`}
               aria-pressed={status === 'understood'}
-              onClick={() => onRate('understood')}
+              onClick={() => {
+                if (status !== 'understood') setCheers((c) => c + 1);
+                onRate('understood');
+              }}
             >
               <Icon name="check" size={16} /> Got it
+              {cheers > 0 && status === 'understood' && (
+                <span key={cheers} className="rate-burst" aria-hidden>
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <i
+                      key={i}
+                      style={{ '--a': `${i * 36}deg` } as CSSProperties}
+                    />
+                  ))}
+                </span>
+              )}
             </button>
             <button
               className={`rate-button is-shaky ${status === 'shaky' ? 'is-chosen' : ''}`}
@@ -327,7 +340,6 @@ export default function SlideLesson({
           </>
         ) : (
           <div className="slide-intro">
-            <span className="eyebrow">Slide {slide.source_number}</span>
             <h2 className="display">{slide.title}</h2>
             {skipped ? (
               <>

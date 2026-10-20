@@ -1,12 +1,12 @@
 /* The upload screen is always "ink", whatever the app theme: it is a moment. */
 .generation-screen {
-  --gen-bg: #0b0a09;
-  --gen-ink: #f2ece2;
-  --gen-ink-2: #a9a094;
-  --gen-ink-3: #6f685e;
-  --gen-line: rgb(242 236 226 / 0.12);
-  --gen-accent: #ff6b3d;
-  --gen-good: #7ccb9b;
+  --gen-bg: #090b10;
+  --gen-ink: #eef0f5;
+  --gen-ink-2: #a3aabb;
+  --gen-ink-3: #687084;
+  --gen-line: rgb(238 240 245 / 0.12);
+  --gen-accent: #7d95ff;
+  --gen-good: #6fd09c;
   --gen-bad: #f2766b;
   position: fixed;
   inset: 0;
@@ -40,7 +40,7 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 62% 42%, rgb(255 107 61 / 0.09), transparent 38%),
+    radial-gradient(circle at 62% 42%, rgb(125 149 255 / 0.1), transparent 38%),
     radial-gradient(ellipse at center, transparent 40%, rgb(0 0 0 / 0.65)),
     repeating-linear-gradient(
       to bottom,
@@ -54,7 +54,7 @@
   pointer-events: none;
   background: radial-gradient(
     circle at 62% 42%,
-    rgb(255 160 120 / 0.5),
+    rgb(160 180 255 / 0.5),
     transparent 60%
   );
   opacity: 0;

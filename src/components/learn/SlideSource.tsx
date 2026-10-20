@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import type { RenderTask } from 'pdfjs-dist';
 import { Icon } from '../ui';
 import type { DocumentSlide } from '@/lib/document-slides';
+import { drawPage, loadPdf, loadSource } from './source-cache';
 
 /** Lay out extracted text as a slide: the title, then up to ten lines. */
 function TextSlide({ title, text }: { title: string; text: string }) {
@@ -33,54 +35,129 @@ function TextSlide({ title, text }: { title: string; text: string }) {
   );
 }
 
+/** One PDF page drawn to fit the stage width, redrawn on resize or zoom. */
+function PdfPage({
+  documentId,
+  version,
+  number,
+  zoom,
+  onError,
+}: {
+  documentId: string;
+  version: number;
+  number: number;
+  zoom: number;
+  onError: (message: string) => void;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setWidth(Math.round(entry.contentRect.width)),
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!width || !canvas.current) return;
+    let task: RenderTask | null = null;
+    let live = true;
+    loadPdf(documentId, version)
+      .then((pdf) => {
+        if (!live || !canvas.current) return;
+        if (number > pdf.numPages)
+          throw new Error(`This file has no ${number}th page.`);
+        return drawPage(pdf, number, canvas.current, width * zoom, (t) => {
+          task = t;
+        });
+      })
+      .then(() => {
+        if (live) setReady(true);
+      })
+      .catch((e: Error) => {
+        if (live && e.name !== 'RenderingCancelledException')
+          onError(e.message || 'The slide couldn’t be drawn.');
+      });
+    return () => {
+      live = false;
+      task?.cancel();
+    };
+  }, [documentId, version, number, width, zoom, onError]);
+
+  return (
+    <div ref={box} className={`pdf-page ${ready ? 'is-ready' : ''}`}>
+      <canvas
+        ref={canvas}
+        style={{ width: `${zoom * 100}%` }}
+        aria-label={`Original slide ${number}`}
+        role="img"
+      />
+    </div>
+  );
+}
+
 /**
- * The original slide or page, beside its explanation. PDFs use the browser
- * viewer; PPTX decks render in a sandboxed, network-restricted frame.
+ * The original slide or page, beside its explanation. PDFs (and legacy decks
+ * the server converts) are drawn with pdf.js; PPTX decks render in a
+ * sandboxed, network-restricted frame.
  */
 export default function SlideSource({
   documentId,
   number,
   kind,
   fallback,
+  version,
+  onAttached,
 }: {
   documentId: string;
   number: number;
   kind: 'slide' | 'page';
   /** The extracted slide, shown as a text version when no preview exists. */
   fallback: Pick<DocumentSlide, 'title' | 'text'> | null;
+  /** Bumped after a PDF export is attached, so every view refetches. */
+  version: number;
+  onAttached: () => void;
 }) {
-  const [url, setUrl] = useState('');
+  const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
   const [deck, setDeck] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [version, setVersion] = useState(0);
   const [zoom, setZoom] = useState(1);
   const frame = useRef<HTMLIFrameElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const endpoint = `/api/learn/${documentId}/source`;
 
   useEffect(() => {
-    const abort = new AbortController();
-    let objectUrl = '';
-    fetch(endpoint, { signal: abort.signal })
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).error);
-        if (r.headers.get('Content-Type')?.includes('presentation')) {
-          setDeck(await r.arrayBuffer());
-          return;
-        }
-        objectUrl = URL.createObjectURL(await r.blob());
-        setDeck(null);
-        setUrl(objectUrl);
+    let live = true;
+    loadSource(documentId, version)
+      .then((source) => {
+        if (!live) return;
+        setError('');
+        setPdf(source.kind === 'pdf' ? source.data : null);
+        setDeck(source.kind === 'deck' ? source.data : null);
       })
-      .catch((e) => {
-        if (!abort.signal.aborted) setError(e.message);
+      .catch((e: Error) => {
+        if (live) setError(e.message);
       });
     return () => {
-      abort.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      live = false;
     };
-  }, [endpoint, version]);
+  }, [documentId, version]);
+
+  function openFull() {
+    if (!pdf) return;
+    const url = URL.createObjectURL(
+      new Blob([pdf], { type: 'application/pdf' }),
+    );
+    window.open(`${url}#page=${number}`, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 
   const send = () =>
     deck &&
@@ -112,7 +189,7 @@ export default function SlideSource({
       const res = await fetch(endpoint, { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not attach the PDF.');
-      setVersion((v) => v + 1);
+      onAttached();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -129,7 +206,7 @@ export default function SlideSource({
           {label.toLowerCase()}
         </span>
         <div className="source-tools">
-          {deck && (
+          {(deck || pdf) && (
             <>
               <button
                 className="icon-button"
@@ -171,25 +248,27 @@ export default function SlideSource({
               </button>
             </>
           )}
-          {url && (
-            <a
+          {pdf && (
+            <button
               className="icon-button"
-              href={`${url}#page=${number}`}
-              target="_blank"
-              rel="noreferrer"
+              onClick={openFull}
               aria-label="Open full size in a new tab"
             >
               <Icon name="arrow" size={16} />
-            </a>
+            </button>
           )}
         </div>
       </div>
-      <div className="source-stage">
-        {url ? (
-          <iframe
-            key={`${url}-${number}`}
-            title={`Original ${label.toLowerCase()} ${number}`}
-            src={`${url}#page=${number}&view=FitH&toolbar=0&navpanes=0`}
+      <div
+        className={`source-stage ${pdf ? 'is-pdf' : ''} ${!pdf && !deck && error && fallback ? 'is-text' : ''}`}
+      >
+        {pdf ? (
+          <PdfPage
+            documentId={documentId}
+            version={version}
+            number={number}
+            zoom={zoom}
+            onError={setError}
           />
         ) : deck ? (
           <iframe
@@ -214,21 +293,21 @@ export default function SlideSource({
           </div>
         )}
       </div>
-      {(url || deck) && error && (
+      {(pdf || deck) && error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      {error && !url && !deck && fallback && (
+      {error && !pdf && !deck && fallback && (
         <p className="source-note">
           <span className="chip">Text version</span> The original slide can’t be
           shown for this file, so this is its extracted text. Attach a PDF
           export to see the real slides.
         </p>
       )}
-      <details className="source-attach" open={!!error && !url && !deck}>
+      <details className="source-attach" open={!!error && !pdf && !deck}>
         <summary>
-          {error && !url && !deck
+          {error && !pdf && !deck
             ? 'Attach a PDF export of the deck'
             : 'Preview looks off? Attach a PDF export'}
         </summary>

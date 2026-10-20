@@ -190,7 +190,7 @@ export default function DocumentChat() {
             <Icon name="menu" size={15} /> History
           </button>
           <span className="eyebrow">
-            <b>●</b> Grounded in {doc ? doc.filename : 'your deck'}
+            Grounded in {doc ? doc.filename : 'your deck'}
           </span>
         </div>
         <div className="chat-scroll">

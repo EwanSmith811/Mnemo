@@ -133,13 +133,12 @@ a:hover .wordmark svg {
 .study-navigation a:hover {
   color: var(--ink);
 }
-.study-navigation a[aria-current='page'] {
+.study-navigation a[aria-current] {
   color: var(--ink);
 }
-.study-navigation a[aria-current='page']::after {
+.study-navigation a[aria-current]::after {
   transform: scaleX(1);
 }
-
 @media (max-width: 640px) {
   .nav-link:not(.nav-link-cta) {
     display: none;

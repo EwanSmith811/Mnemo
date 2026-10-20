@@ -25,6 +25,7 @@ import { Icon } from './ui';
 // Topic hues are theme tokens so the map follows light and dark mode.
 const COLORS = [1, 2, 3, 4, 5, 6].map((n) => `var(--topic-${n})`);
 const INITIAL_VIEW = { x: 0, y: 0, width: 1200, height: 800 };
+const INTERESTS_KEY = 'mnemo:riff-interests';
 export default function GraphClient() {
   const { documentId } = useParams<{ documentId: string }>();
   const [graph, setGraph] = useState<ConceptGraph | null>(null);
@@ -39,10 +40,20 @@ export default function GraphClient() {
   const [hidden, setHidden] = useState(false);
   const page = useRef<HTMLElement>(null);
   const [listView, setListView] = useState(false);
-  // Memory story: pick concepts on the map, then open the story theater.
+  // Memory riffs: pick concepts on the map, then open the riff theater.
   const [storyMode, setStoryMode] = useState(false);
   const [storyNodes, setStoryNodes] = useState<string[]>([]);
   const [theater, setTheater] = useState(false);
+  // Remembered per browser: a convenience, not a record.
+  const [interests, setInterests] = useState(() => {
+    try {
+      return typeof window === 'undefined'
+        ? ''
+        : (localStorage.getItem(INTERESTS_KEY) ?? '');
+    } catch {
+      return '';
+    }
+  });
   const [view, setView] = useState(INITIAL_VIEW);
   const [hovered, setHovered] = useState<string | null>(null);
   const viewRef = useRef(view);
@@ -402,7 +413,7 @@ export default function GraphClient() {
             }}
           >
             <Icon name={storyMode ? 'check' : 'sparkle'} size={16} />
-            <span>{storyMode ? 'Done' : 'Memory story'}</span>
+            <span>{storyMode ? 'Done' : 'Memory riffs'}</span>
           </button>
           <Link
             className="map-workbench-link"
@@ -1070,8 +1081,8 @@ export default function GraphClient() {
                     >
                       <Icon name="sparkle" size={15} />
                       {storyNodes.includes(current.id)
-                        ? 'In your memory story'
-                        : 'Add to a memory story'}
+                        ? 'In your memory riffs'
+                        : 'Add to memory riffs'}
                     </button>
                   </>
                 )}
@@ -1083,6 +1094,13 @@ export default function GraphClient() {
               picked={storyConcepts}
               visible={(layout?.nodes ?? []).filter((n) => matches.has(n.id))}
               topic={group}
+              interests={interests}
+              onInterests={(value) => {
+                setInterests(value);
+                try {
+                  localStorage.setItem(INTERESTS_KEY, value);
+                } catch {}
+              }}
               onRemove={toggleStoryNode}
               onSelectAll={(ids) =>
                 setStoryNodes((current) =>
@@ -1101,6 +1119,7 @@ export default function GraphClient() {
             <StoryTheater
               documentId={documentId}
               concepts={storyConcepts}
+              interests={interests.trim()}
               onClose={() => setTheater(false)}
             />
           )}

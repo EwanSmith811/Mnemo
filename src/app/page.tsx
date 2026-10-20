@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import UploadForm from '@/components/UploadForm';
 import DocumentList from '@/components/DocumentList';
 import { Icon, stagger } from '@/components/ui';
+import HeroMap from '@/components/HeroMap';
 import { Wordmark } from '@/components/Logo';
 import type { Document } from '@/types';
 
@@ -62,9 +63,6 @@ export default function Home() {
     <main className="library-page">
       <section className="hero">
         <div className="hero-copy">
-          <span className="eyebrow rise" style={stagger(0)}>
-            <b>●</b> A study system for slide decks
-          </span>
           <h1 className="display rise" style={stagger(1)}>
             Every slide,
             <br />
@@ -86,36 +84,12 @@ export default function Home() {
             )}
           </div>
         </div>
-        <div className="hero-deck" aria-hidden="true">
-          {[3, 2, 1].map((n) => (
-            <div key={n} className={`hero-slide hero-slide-${n}`}>
-              <span className="hero-slide-num mono">
-                {String(n + 11).padStart(2, '0')}
-              </span>
-              <i />
-              <i />
-              <i />
-              {n === 1 && (
-                <>
-                  <span className="hero-slide-term">
-                    Cardiac output <b>=</b> HR × SV
-                  </span>
-                  <span className="hero-slide-note">
-                    <Icon name="sparkle" size={13} /> Explained simply
-                  </span>
-                </>
-              )}
-            </div>
-          ))}
-          <div className="hero-card">
-            <span className="eyebrow">Check yourself</span>
-            <p>What happens to output if stroke volume falls?</p>
-            <div>
-              <span className="chip is-good">Got it</span>
-              <span className="chip">Shaky</span>
-            </div>
-          </div>
-        </div>
+        <figure className="hero-visual">
+          <HeroMap />
+          <figcaption>
+            Every deck becomes a map of how its ideas connect.
+          </figcaption>
+        </figure>
       </section>
 
       <ol className="method">
@@ -130,9 +104,6 @@ export default function Home() {
 
       <section className="upload-section" id="upload">
         <div className="upload-intro">
-          <span className="eyebrow">
-            <b>01</b> New study set
-          </span>
           <h2 className="display">
             Start with
             <br />
@@ -149,9 +120,6 @@ export default function Home() {
       <section className="library-section" id="library">
         <div className="library-head">
           <div>
-            <span className="eyebrow">
-              <b>02</b> Library
-            </span>
             <h2 className="display">
               Your decks{' '}
               <span className="library-count mono">{documents.length}</span>

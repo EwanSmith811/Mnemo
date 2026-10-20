@@ -6,7 +6,45 @@ import type { SlideStatus } from '@/lib/slide-tutor';
 import { resumeIndex } from '@/lib/study-plan';
 import SlideSource from './SlideSource';
 import SlideLesson from './SlideLesson';
-import { Icon, Meter, PageLoading } from '../ui';
+import ProgressRing from './ProgressRing';
+import Confetti from './Confetti';
+import { drawPage, loadPdf } from './source-cache';
+import { Icon, PageLoading } from '../ui';
+
+const THUMB_WIDTH = 116;
+
+/** Small images of each page, drawn once the current slide has had a head start. */
+function useThumbnails(documentId: string, version: number, pages: number[]) {
+  const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
+  const key = pages.join(',');
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const pdf = await loadPdf(documentId, version);
+        const canvas = document.createElement('canvas');
+        const made = new Map<number, string>();
+        for (const page of key.split(',').map(Number)) {
+          if (!live) return;
+          if (page > pdf.numPages || made.has(page)) continue;
+          await drawPage(pdf, page, canvas, THUMB_WIDTH);
+          made.set(page, canvas.toDataURL('image/jpeg', 0.82));
+          // Publish in small batches so the rail fills in as it goes.
+          if (made.size % 4 === 0) setThumbs(new Map(made));
+        }
+        if (live) setThumbs(new Map(made));
+      } catch {
+        // No PDF to draw from (PPTX or a missing file): titles stand in.
+      }
+    }, 700);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [documentId, version, key]);
+  return thumbs;
+}
 
 const STATUS_LABEL: Record<SlideStatus, string> = {
   seen: 'Opened',
@@ -31,7 +69,13 @@ export default function SlideWalkthrough({
   const [onlyShaky, setOnlyShaky] = useState(false);
   const [finished, setFinished] = useState(false);
   const [detail, setDetail] = useState<DocumentSlide | null>(null);
+  const [sourceVersion, setSourceVersion] = useState(0);
   const prefetched = useRef(new Set<string>());
+  const thumbs = useThumbnails(
+    documentId,
+    sourceVersion,
+    slides.map((s) => s.source_number),
+  );
 
   const save = useCallback(
     (id: string, status: SlideStatus) =>
@@ -235,16 +279,25 @@ export default function SlideWalkthrough({
       <aside className="walk-rail" aria-label="Slides">
         <div className="walk-rail-head">
           <div className="walk-rail-progress">
-            <span className="eyebrow">Progress</span>
-            <strong className="mono">
-              {rated}/{core.length}
-            </strong>
+            <ProgressRing
+              understood={counts.understood}
+              shaky={counts.shaky}
+              total={core.length}
+            />
+            <div>
+              <strong>
+                {rated === core.length && core.length
+                  ? 'Deck complete'
+                  : rated
+                    ? `${core.length - rated} to go`
+                    : 'Let’s begin'}
+              </strong>
+              <p className="walk-rail-counts">
+                <span className="is-good">{counts.understood} got it</span>
+                <span className="is-shaky">{counts.shaky} shaky</span>
+              </p>
+            </div>
           </div>
-          <Meter value={core.length ? rated / core.length : 0} />
-          <p className="walk-rail-counts">
-            <span className="is-good">{counts.understood} got it</span>
-            <span className="is-shaky">{counts.shaky} shaky</span>
-          </p>
           {skipped > 0 && (
             <p className="walk-rail-skipped">
               {skipped} {skipped === 1 ? 'slide' : 'slides'} skipped: nothing to
@@ -287,8 +340,26 @@ export default function SlideWalkthrough({
                 }
                 onClick={() => go(i)}
               >
-                <span className="walk-num mono">
-                  {String(s.source_number).padStart(2, '0')}
+                <span className="walk-thumb">
+                  {thumbs.get(s.source_number) ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- a local data URL, nothing to optimize
+                    <img src={thumbs.get(s.source_number)} alt="" />
+                  ) : (
+                    <span className="walk-thumb-text">{s.title}</span>
+                  )}
+                  <span className="walk-num mono">
+                    {String(s.source_number).padStart(2, '0')}
+                  </span>
+                  <span
+                    className="walk-status"
+                    title={s.status ? STATUS_LABEL[s.status] : 'Not opened'}
+                  >
+                    {s.status === 'understood' ? (
+                      <Icon name="check" size={11} />
+                    ) : s.status === 'shaky' ? (
+                      '~'
+                    ) : null}
+                  </span>
                 </span>
                 <span className="walk-title">
                   {s.title}
@@ -296,10 +367,6 @@ export default function SlideWalkthrough({
                     <small>{s.relevance_reason || 'Skipped'}</small>
                   )}
                 </span>
-                <span
-                  className="walk-status"
-                  title={s.status ? STATUS_LABEL[s.status] : 'Not opened'}
-                />
               </button>
             </li>
           ))}
@@ -329,7 +396,7 @@ export default function SlideWalkthrough({
             <Icon name="back" />
           </button>
           <div className="walk-top-title">
-            <span className="mono">
+            <span>
               {slide.relevance === 'skip'
                 ? `${label} ${slide.source_number} · skipped`
                 : `${label} ${core.indexOf(slide) + 1} of ${core.length}`}
@@ -352,9 +419,13 @@ export default function SlideWalkthrough({
 
         {finished ? (
           <section className="walk-finished">
-            <span className="eyebrow">
-              <b>●</b> End of the deck
-            </span>
+            {rated === core.length && core.length > 0 && <Confetti />}
+            <ProgressRing
+              understood={counts.understood}
+              shaky={counts.shaky}
+              total={core.length}
+              size={120}
+            />
             <h2 className="display">
               {rated === core.length ? (
                 <>
@@ -419,6 +490,8 @@ export default function SlideWalkthrough({
                 number={slide.source_number}
                 kind={slide.kind}
                 fallback={detail?.id === slide.id ? detail : null}
+                version={sourceVersion}
+                onAttached={() => setSourceVersion((v) => v + 1)}
               />
             </div>
             <div className="walk-lesson">

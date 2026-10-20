@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       ...(style === 'story' && model.startsWith('gpt-4o')
         ? {
             instructions:
-              'Narrate like a gravely serious nature-documentary narrator describing utter nonsense. Deadpan, warm, theatrical. Lean into comic timing: a brief pause before each punchline, relish the ridiculous names, and keep a brisk pace.',
+              'Deliver like a deadpan stand-up comic reading a set list of absurd one-liners. Dry, confident, quick. A tiny pause before each punchline; never laugh at your own jokes.',
           }
         : {}),
     });

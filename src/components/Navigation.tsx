@@ -16,6 +16,19 @@ export const STUDY_TOOLS = [
   ['chat', 'Ask Mnemo'],
   ['verbal', 'Voice'],
 ] as const;
+const PRACTICE = STUDY_TOOLS.filter(([route]) =>
+  ['flashcards', 'quiz', 'workbench'].includes(route),
+);
+// Practice tools share one tab so the bar stays calm.
+const STUDY_NAV: [string, string][] = [
+  ['documents', 'Overview'],
+  ['learn', 'Walkthrough'],
+  ['practice', 'Practice'],
+  ['graph', 'Concept map'],
+  ['summaries', 'Summaries'],
+  ['chat', 'Ask Mnemo'],
+  ['verbal', 'Voice'],
+];
 
 type Theme = 'light' | 'dark';
 const themeListeners = new Set<() => void>();
@@ -89,15 +102,22 @@ export default function Navigation() {
         {inStudy && (
           <nav className="study-navigation" aria-label="Study tools">
             <div>
-              {STUDY_TOOLS.map(([route, label]) => (
-                <Link
-                  key={route}
-                  href={`/${route}/${documentId}`}
-                  aria-current={section === route ? 'page' : undefined}
-                >
-                  {label}
-                </Link>
-              ))}
+              {STUDY_NAV.map(([route, label]) => {
+                // Practice stays one tab; its tools switch inside the page.
+                const practice = route === 'practice';
+                const current = practice
+                  ? PRACTICE.some(([p]) => p === section)
+                  : section === route;
+                return (
+                  <Link
+                    key={route}
+                    href={`/${practice ? 'flashcards' : route}/${documentId}`}
+                    aria-current={current ? 'page' : undefined}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
             </div>
           </nav>
         )}

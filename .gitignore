@@ -45,3 +45,4 @@ next-env.d.ts
 # Generated isolated PowerPoint viewer (predev/prebuild).
 /public/mnemo-slide-viewer.js
 /public/mnemo-slide-viewer.html
+/public/pdf.worker.min.mjs

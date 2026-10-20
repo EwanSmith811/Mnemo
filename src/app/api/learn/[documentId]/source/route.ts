@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/database';
-import { convertPresentation } from '@/lib/source-preview';
+import { convertPresentation, isStalePreview } from '@/lib/source-preview';
 export const maxDuration = 60;
 type Context = { params: Promise<{ documentId: string }> };
 export async function GET(request: NextRequest, context: Context) {
@@ -50,6 +50,7 @@ export async function GET(request: NextRequest, context: Context) {
       : source.file_type === 'pdf'
         ? Buffer.from(source.data_base64, 'base64')
         : null;
+    if (pdf && source.file_type !== 'pdf' && isStalePreview(pdf)) pdf = null;
     if (!pdf) {
       pdf = await convertPresentation(
         Buffer.from(source.data_base64, 'base64'),

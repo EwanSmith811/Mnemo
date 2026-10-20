@@ -196,7 +196,7 @@ export default function DocumentPage() {
                       value={step.progress}
                       tone={step.done ? 'good' : undefined}
                     />
-                    <span className="plan-step-state mono">
+                    <span className="plan-step-state">
                       {step.done
                         ? 'Done'
                         : active

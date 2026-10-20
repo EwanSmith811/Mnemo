@@ -77,9 +77,6 @@ export default function SummariesPage() {
       <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
       <header className="page-head">
         <div>
-          <span className="eyebrow">
-            <b>{String(summaries.length).padStart(2, '0')}</b> Topic summaries
-          </span>
           <h1>
             The deck, <em>in brief.</em>
           </h1>

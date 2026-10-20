@@ -432,9 +432,6 @@ export default function VerbalQuizPage() {
         <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
         <header className="page-head">
           <div>
-            <span className="eyebrow">
-              <b>●</b> Voice practice
-            </span>
             <h1>
               Say it <em>out loud.</em>
             </h1>
@@ -529,7 +526,7 @@ export default function VerbalQuizPage() {
           ← End session
         </button>
         <span className="eyebrow">
-          <b>●</b> {mode === 'user_explains' ? 'Teach it back' : 'Quiz me'}
+          {mode === 'user_explains' ? 'Teach it back' : 'Quiz me'}
         </span>
         <div className="segmented">
           {VOICES.map((v) => (

@@ -9,6 +9,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     "public/mnemo-slide-viewer.js",
+    "public/pdf.worker.min.mjs",
     ".next/**",
     "out/**",
     "build/**",

@@ -3,62 +3,16 @@ import { ai, AI_TEXT_OPTIONS } from '@/lib/ai';
 import { database } from '@/lib/database';
 import { normalizeGraph } from '@/lib/graph';
 import {
+  cleanInterests,
   MAX_STORY_CONCEPTS,
   MIN_STORY_CONCEPTS,
   parseStoryLine,
-  CAST_PROMPT,
-  castRequest,
-  nameLeaksTerm,
-  parseCast,
-  WORLD_PROMPT,
-  worldRequest,
-  SCENES_PROMPT,
-  scenesRequest,
+  STORY_PROMPT,
+  storyRequest,
+  type StoryBit,
   type StoryConcept,
   type StoryEvent,
-  type StoryPlan,
 } from '@/lib/memory-story';
-
-type Message = { role: 'system' | 'user' | 'assistant'; content: string };
-async function json(messages: Message[], maxTokens: number) {
-  const response = await ai.chat.completions.create({
-    ...AI_TEXT_OPTIONS,
-    messages,
-    response_format: { type: 'json_object' },
-    temperature: 1,
-    max_completion_tokens: maxTokens,
-  });
-  const content = response.choices[0]?.message?.content ?? '{}';
-  return { content, value: JSON.parse(content) as unknown };
-}
-
-/** Cast one batch; if any name just repeats its term, ask once more. */
-async function castBatch(world: string, batch: StoryConcept[]) {
-  const messages: Message[] = [
-    { role: 'system', content: CAST_PROMPT },
-    { role: 'user', content: castRequest(world, batch) },
-  ];
-  let { content, value } = await json(messages, 220 * batch.length + 200);
-  let cast = parseCast(value, batch);
-  const lazy = cast.filter((c) => nameLeaksTerm(c.name, c.concept));
-  if (lazy.length) {
-    messages.push(
-      { role: 'assistant', content },
-      {
-        role: 'user',
-        content: `These names reuse the term's own words, which is lazy: ${lazy
-          .map((c) => `"${c.name}" for ${c.concept}`)
-          .join(
-            '; ',
-          )}. Replace them with sound-alike puns that avoid those words. Return the full JSON again.`,
-      },
-    );
-    ({ content, value } = await json(messages, 220 * batch.length + 200));
-    const retried = parseCast(value, batch);
-    if (retried.length >= cast.length) cast = retried;
-  }
-  return cast;
-}
 
 /** Stream a completion and hand each finished line to `onLine`. */
 async function streamLines(
@@ -92,8 +46,8 @@ async function streamLines(
 export const maxDuration = 120;
 
 /**
- * Streams a memory story as NDJSON events (title, cast, scene, moral) so the
- * reader and the narrator can start before the whole story is written.
+ * Streams memory riffs as NDJSON events (title, one bit per concept, encore)
+ * so the reader and the narrator can start before every line is written.
  */
 export async function POST(
   request: NextRequest,
@@ -102,6 +56,7 @@ export async function POST(
   const { documentId } = await params;
   const body = await request.json().catch(() => null);
   const ids: unknown = body?.conceptIds;
+  const interests = cleanInterests(body?.interests);
   if (
     !Array.isArray(ids) ||
     ids.length < MIN_STORY_CONCEPTS ||
@@ -169,90 +124,46 @@ export async function POST(
         if (open)
           controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
       };
-      let scenes = 0;
-      const plan: StoryPlan = { world: '', title: '', cast: [] };
-      try {
-        // Step 1: a shared world and title, then the cast in parallel
-        // batches so a big selection doesn't mean a long wait.
-        const setup = (
-          await json(
-            [
-              { role: 'system', content: WORLD_PROMPT },
-              { role: 'user', content: worldRequest(concepts, subject) },
-            ],
-            200,
-          )
-        ).value as { world?: unknown; title?: unknown };
-        plan.world = String(setup.world ?? 'A wedding on a sinking ship.');
-        plan.title = String(setup.title ?? 'A Very Strange Story').slice(
-          0,
-          160,
-        );
-        send({ type: 'title', text: plan.title });
-        const size = Math.ceil(
-          concepts.length / Math.ceil(concepts.length / 5),
-        );
-        const batches: StoryConcept[][] = [];
-        for (let i = 0; i < concepts.length; i += size)
-          batches.push(concepts.slice(i, i + size));
-        const casts = await Promise.all(
-          batches.map((batch) =>
-            castBatch(plan.world, batch).then((cast) => {
-              for (const c of cast)
-                send({
-                  type: 'cast',
-                  name: c.name,
-                  concept: c.concept,
-                  meaning: c.meaning,
-                  conceptId: c.conceptId,
-                });
-              return cast;
-            }),
-          ),
-        );
-        // Anyone the batches dropped gets one more audition.
-        const missing = concepts.filter(
-          (c) => !casts.flat().some((m) => m.conceptId === c.id),
-        );
-        if (missing.length) {
-          const extra = await castBatch(plan.world, missing).catch(() => []);
-          for (const c of extra)
-            send({
-              type: 'cast',
-              name: c.name,
-              concept: c.concept,
-              meaning: c.meaning,
-              conceptId: c.conceptId,
-            });
-          casts.push(extra);
-        }
-        // Keep the cast in the order the learner picked the concepts.
-        plan.cast = concepts
-          .map((c) => casts.flat().find((m) => m.conceptId === c.id))
-          .filter((m): m is NonNullable<typeof m> => !!m);
-        if (plan.cast.length < MIN_STORY_CONCEPTS)
-          throw new Error('The cast never showed up.');
-        // Step 2: scenes and the moral, written from the plan.
-        await streamLines(
-          SCENES_PROMPT,
-          scenesRequest(plan, subject),
-          2400,
+      const bits: StoryBit[] = [];
+      let encore = '';
+      let titled = false;
+      const write = (todo: StoryConcept[]) =>
+        streamLines(
+          STORY_PROMPT,
+          storyRequest(todo, subject, interests, bits),
+          140 * todo.length + 300,
           (line) => {
-            const event = parseStoryLine(line, concepts, scenes);
-            if (event?.type === 'scene') {
-              scenes++;
+            const event = parseStoryLine(line, todo);
+            if (event?.type === 'title' && !titled) {
+              titled = true;
               send(event);
-            } else if (event?.type === 'moral') send(event);
+            } else if (
+              event?.type === 'bit' &&
+              !bits.some((b) => b.conceptId === event.conceptId)
+            ) {
+              bits.push(event);
+              send(event);
+            } else if (event?.type === 'encore') encore = event.text;
           },
           () => open,
         );
-        if (!scenes) throw new Error('No scenes were written.');
+      try {
+        await write(concepts);
+        // Anything the model skipped gets one more pass, still on theme.
+        const missing = concepts.filter(
+          (c) => !bits.some((b) => b.conceptId === c.id),
+        );
+        if (missing.length && open) await write(missing);
+        if (bits.length < MIN_STORY_CONCEPTS)
+          throw new Error('Too few riffs were written.');
+        // The encore lands last, after every gag it calls back.
+        if (encore) send({ type: 'encore', text: encore });
         send({ type: 'done' });
       } catch (error) {
-        console.error('Memory story failed:', error);
+        console.error('Memory riffs failed:', error);
         send({
           type: 'error',
-          message: 'The story fell apart mid-sentence. Try again.',
+          message: 'The riffs fell apart mid-joke. Try again.',
         });
       } finally {
         if (open) {

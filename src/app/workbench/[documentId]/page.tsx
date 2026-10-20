@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import PracticeTabs from '@/components/PracticeTabs';
 import type { WorkbenchGroupStatus } from '@/types';
 import { learningSummary } from '@/lib/workbench-learning';
 
@@ -51,9 +52,7 @@ export default function WorkbenchHub() {
     `/workbench/${documentId}/${encodeURIComponent(g.group)}`;
   return (
     <main className="workbench-page">
-      <Link className="back-link" href={`/documents/${documentId}`}>
-        ← Study plan
-      </Link>
+      <PracticeTabs documentId={documentId} />
       <header className="workbench-heading">
         <div>
           <h1>Make it click.</h1>

@@ -72,7 +72,7 @@ export class Constellation {
   private pointer = { x: 0, y: 0 };
   private tilt = { x: 0, y: 0 };
   private mono = 'monospace';
-  private colors = { ink: '#f2ece2', ember: '#ff6b3d', bad: '#f2766b' };
+  private colors = { ink: '#eef0f5', ember: '#7d95ff', bad: '#f2766b' };
   onSlide?: (index: number) => void;
 
   constructor(
@@ -84,7 +84,7 @@ export class Constellation {
     this.mono = styles.getPropertyValue('--font-geist-mono') || 'monospace';
     this.colors.ink = styles.getPropertyValue('--gen-ink').trim() || '#f2ece2';
     this.colors.ember =
-      styles.getPropertyValue('--gen-accent').trim() || '#ff6b3d';
+      styles.getPropertyValue('--gen-accent').trim() || '#7d95ff';
     for (let i = 0; i < COUNT; i++) {
       const u = Math.random() * TAU;
       const v = Math.acos(2 * Math.random() - 1);

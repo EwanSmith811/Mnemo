@@ -25,10 +25,10 @@
   gap: 4px;
 }
 .dashboard-stats dt {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--ink-3);
 }
 .dashboard-stats dd {
@@ -181,9 +181,9 @@
   margin-top: 6px;
 }
 .plan-step-state {
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--ink-3);
 }
 .plan-step.is-active .plan-step-state {

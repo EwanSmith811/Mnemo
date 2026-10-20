@@ -7,7 +7,8 @@ import QuizPlayer, {
   type QuizScore,
 } from '@/components/QuizPlayer';
 import ScoreDisplay from '@/components/ScoreDisplay';
-import { BackLink, Icon, PageLoading } from '@/components/ui';
+import { Icon, PageLoading } from '@/components/ui';
+import PracticeTabs from '@/components/PracticeTabs';
 import type { QuizQuestion, QuestionType } from '@/types';
 
 const LIMIT = 100;
@@ -112,7 +113,7 @@ export default function QuizPage() {
     return <PageLoading label="Drawing your questions" />;
   return (
     <main className="page is-reading">
-      <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
+      <PracticeTabs documentId={documentId} />
       {phase === 'quiz' && (
         <QuizPlayer
           key={roundKey}
@@ -155,9 +156,6 @@ export default function QuizPage() {
         <>
           <header className="page-head">
             <div>
-              <span className="eyebrow">
-                <b>03</b> Quiz
-              </span>
               <h1>
                 Find out what <em>stuck.</em>
               </h1>
@@ -192,7 +190,7 @@ export default function QuizPage() {
                   onClick={() => play(shuffle(missedQuestions))}
                 >
                   <span className="eyebrow">
-                    <b>●</b> From your last quiz · {last!.score}%
+                    From your last quiz · {last!.score}%
                   </span>
                   <strong>
                     Retry the {missedQuestions.length} question

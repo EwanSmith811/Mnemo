@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pdf-parse', 'officeparser', 'ppt-codec'],
+  serverExternalPackages: ['pdf-parse', 'officeparser', 'ppt-codec', 'reamkit'],
   turbopack: { root: process.cwd() },
   // Legacy parsing runs outside the bundle in a Node worker. Ship its modules
   // explicitly so filesystem resolution also works in Vercel deployments.

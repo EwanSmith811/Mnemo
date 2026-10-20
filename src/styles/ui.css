@@ -17,11 +17,10 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: var(--ink-3);
 }
 .eyebrow b {
@@ -97,10 +96,10 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 28px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--ink-3);
   transition: color 0.2s;
 }
@@ -278,10 +277,10 @@ button.card:hover:not(:disabled) {
   border: 1px solid var(--line);
   background: var(--surface-2);
   color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .chip.is-accent {
@@ -419,10 +418,10 @@ button.card:hover:not(:disabled) {
   gap: 22px;
   min-height: calc(100dvh - var(--nav-h) - var(--study-nav-h) - 40px);
   color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
 }
 .page-loading-mark {
   display: flex;
@@ -560,7 +559,8 @@ select,
   border: 1px solid var(--line);
 }
 .segmented button,
-.segmented label {
+.segmented label,
+.segmented a {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -578,11 +578,13 @@ select,
     box-shadow 0.25s;
 }
 .segmented button:hover,
-.segmented label:hover {
+.segmented label:hover,
+.segmented a:hover {
   color: var(--ink);
 }
 .segmented [aria-pressed='true'],
 .segmented [aria-selected='true'],
+.segmented [aria-current='page'],
 .segmented label:has(input:checked) {
   background: var(--surface);
   color: var(--ink);
@@ -677,4 +679,9 @@ select,
   font-family: var(--font-display);
   font-size: 28px;
   line-height: 1;
+}
+
+/* Flashcards · Quiz · Workbench, at the top of each practice page. */
+.practice-tabs {
+  margin-bottom: 28px;
 }

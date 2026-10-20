@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
+import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import '@/styles/tokens.css';
 import '@/styles/base.css';
 import '@/styles/ui.css';
@@ -23,11 +23,12 @@ const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
 });
-// Normal-width editorial serif; optical sizing keeps large headlines open.
-const newsreader = Newsreader({
-  variable: '--font-newsreader',
+// A soft, slightly quirky serif for headlines; optical sizing keeps large
+// sizes open and the SOFT axis rounds its terminals.
+const fraunces = Fraunces({
+  variable: '--font-fraunces',
   style: ['normal', 'italic'],
-  axes: ['opsz'],
+  axes: ['opsz', 'SOFT'],
   subsets: ['latin'],
 });
 
@@ -38,8 +39,8 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f3efe6' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f0e0c' },
+    { media: '(prefers-color-scheme: light)', color: '#f4f5f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0c0e13' },
   ],
 };
 
@@ -53,7 +54,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
