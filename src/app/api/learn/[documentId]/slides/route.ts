@@ -21,6 +21,13 @@ export async function GET(
     // Before migration 007 is applied, progress simply starts empty.
     if (progress.error && progress.error.code !== '42P01')
       throw new Error('Slide progress unavailable');
+    // Deck names for a study set built from several decks.
+    const sources = await database
+      .from('document_sources')
+      .select('part,filename')
+      .eq('document_id', documentId)
+      .order('part');
+    if (sources.error) throw new Error('Deck names unavailable');
     const status = new Map(
       (progress.data ?? []).map((p) => [p.slide_id, p.status]),
     );
@@ -28,6 +35,7 @@ export async function GET(
       slides: slides.map(
         ({
           id,
+          part,
           position,
           source_number,
           kind,
@@ -37,6 +45,7 @@ export async function GET(
           relevance_reason,
         }): SlideSummary => ({
           id,
+          part: part ?? 0,
           position,
           source_number,
           kind,
@@ -47,6 +56,7 @@ export async function GET(
           status: status.get(id) ?? null,
         }),
       ),
+      decks: sources.data.map((s) => ({ part: s.part, filename: s.filename })),
       notice: slides.length
         ? 'Explanations use extracted text and speaker notes. Keep the source beside your explanation. Older PowerPoint decks may need a PDF export for visual preview.'
         : 'Slide/page boundaries were not saved for this older upload. Upload the original again to enable the guided walkthrough.',

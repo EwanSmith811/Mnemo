@@ -11,6 +11,8 @@ export type SlideRelevance = 'core' | 'skip';
 export interface DocumentSlide extends ExtractedSlide {
   id: string;
   document_id: string;
+  /** The deck it came from, in a study set built from several decks. */
+  part: number;
   /** Null until checked; 'skip' marks slides with nothing to learn. */
   relevance: SlideRelevance | null;
   relevance_reason: string;
@@ -18,6 +20,7 @@ export interface DocumentSlide extends ExtractedSlide {
 export type SlideSummary = Pick<
   DocumentSlide,
   | 'id'
+  | 'part'
   | 'position'
   | 'source_number'
   | 'kind'
@@ -56,12 +59,17 @@ export function makeSlide(
   notes = '',
 ): ExtractedSlide {
   const clean = text.replace(/\r\n?/g, '\n').trim();
+  // Shadowed titles come out of PDFs repeated, tab-separated: keep one copy.
+  const lines = clean
+    .split('\n')
+    .map((s) => [...new Set(s.split('\t').map((p) => p.trim()))].join(' '))
+    .map((s) => s.trim());
+  // PDF exports often start a page with its bare page number; skip it.
   const title =
-    clean
-      .split('\n')
-      .map((s) => s.trim())
-      .find((line) => /[\p{L}\p{N}]/u.test(line))
-      ?.slice(0, 140) || `${kind === 'page' ? 'Page' : 'Slide'} ${number}`;
+    (
+      lines.find((line) => /\p{L}/u.test(line)) ??
+      lines.find((line) => /\p{N}/u.test(line))
+    )?.slice(0, 140) || `${kind === 'page' ? 'Page' : 'Slide'} ${number}`;
   return {
     position: number,
     source_number: number,

@@ -1,16 +1,82 @@
 import { storeDocumentSource } from '@/lib/source-preview';
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/database';
-import { extractDocument } from '@/lib/document-parser';
-import type { ExtractedSlide } from '@/lib/document-slides';
 import { storeDocumentSlides } from '@/lib/slide-store';
-import { getDocumentFileType } from '@/lib/document-formats';
+import { readDeck } from '@/lib/read-deck';
+import {
+  combineDecks,
+  deckPreview,
+  MAX_DECKS,
+  type Deck,
+} from '@/lib/upload-parts';
 import { prepareTextForLLM } from '@/lib/text-chunker';
 import { generateFlashcardsAndQuiz } from '@/lib/generate-content';
 import { generateConceptGraph } from '@/lib/generate-graph';
 import { studyContentHash, type UploadClaim } from '@/lib/upload-registry';
 import type { UploadEvent } from '@/lib/upload-progress';
 export const maxDuration = 300;
+
+async function readFile(
+  file: FormDataEntryValue | null,
+  emit: (event: UploadEvent) => void,
+) {
+  if (file instanceof File) emit({ type: 'progress', stage: 'reading' });
+  const deck = await readDeck(file);
+  return deck instanceof NextResponse ? deck : [deck];
+}
+
+function parsePartIds(value: FormDataEntryValue | null): string[] {
+  try {
+    const ids: unknown = JSON.parse(String(value));
+    if (
+      Array.isArray(ids) &&
+      ids.length >= 2 &&
+      ids.length <= MAX_DECKS &&
+      new Set(ids).size === ids.length &&
+      ids.every((id) => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id))
+    )
+      return ids;
+  } catch {}
+  return [];
+}
+
+/** The decks of a study set, read earlier by /api/upload/parts, in order. */
+async function readParts(value: FormDataEntryValue | null) {
+  const ids = parsePartIds(value);
+  if (!ids.length)
+    return NextResponse.json(
+      { error: `Choose between 2 and ${MAX_DECKS} different files.` },
+      { status: 400 },
+    );
+  const rows = await database.from('upload_parts').select().in('id', ids);
+  if (rows.error) throw new Error('Could not load the uploaded files.');
+  if (rows.data.length !== ids.length)
+    return NextResponse.json(
+      {
+        error: 'Some files expired before the study set was built.',
+        detail: 'Retry to send them again.',
+      },
+      { status: 410 },
+    );
+  const byId = new Map(rows.data.map((r) => [r.id, r]));
+  return ids.map((id): Deck => {
+    const part = byId.get(id)!;
+    return {
+      filename: part.filename,
+      fileType: part.file_type,
+      size: part.file_size_bytes,
+      text: part.text,
+      slides: part.slides,
+      buffer: Buffer.from(part.data_base64, 'base64'),
+    };
+  });
+}
+
+async function clearParts(ids: string[]) {
+  if (!ids.length) return;
+  const removed = await database.from('upload_parts').delete().in('id', ids);
+  if (removed.error) console.error('Could not clear uploaded parts');
+}
 
 async function prepareUpload(
   request: NextRequest,
@@ -28,45 +94,20 @@ async function prepareUpload(
         { status: 503 },
       );
     const form = await request.formData();
-    const file = form.get('file');
     const mode = form.get('studyMode');
-    if (!(file instanceof File) || (mode !== 'nursing' && mode !== 'engineers'))
+    if (mode !== 'nursing' && mode !== 'engineers')
       return NextResponse.json(
         { error: 'Choose a file and study focus.' },
         { status: 400 },
       );
-    if (!file.size || file.size > 4 * 1024 * 1024)
-      return NextResponse.json(
-        { error: 'Choose a file smaller than 4 MB.' },
-        { status: 413 },
-      );
-    const extension = getDocumentFileType(file.name);
-    if (!extension)
-      return NextResponse.json(
-        {
-          error: 'Choose a PDF or PowerPoint file (.pptx, .ppt, .pps, .ppsx).',
-        },
-        { status: 400 },
-      );
-    emit({ type: 'progress', stage: 'reading' });
-    const sourceBuffer = Buffer.from(await file.arrayBuffer());
-    let rawText: string;
-    let slides: ExtractedSlide[] = [];
-    try {
-      const extracted = await extractDocument(sourceBuffer, extension);
-      rawText = extracted.text;
-      slides = extracted.slides;
-    } catch (error) {
-      console.error('Document extraction failed:', error);
-      return NextResponse.json(
-        {
-          error: 'Could not read this file.',
-          detail:
-            'Use an unencrypted, text-based PDF or PowerPoint file. If an older slideshow fails, export it as PPTX or PDF.',
-        },
-        { status: 400 },
-      );
-    }
+    const decks = form.has('parts')
+      ? await readParts(form.get('parts'))
+      : await readFile(form.get('file'), emit);
+    if (decks instanceof NextResponse) return decks;
+    const name = form.get('name');
+    const set = combineDecks(decks, typeof name === 'string' ? name : '');
+    const { rawText, slides } = set;
+    const partIds = form.has('parts') ? parsePartIds(form.get('parts')) : [];
     if (rawText.trim().length < 100)
       return NextResponse.json(
         {
@@ -78,24 +119,21 @@ async function prepareUpload(
     emit({
       type: 'progress',
       stage: 'reading',
-      preview: {
-        slides: slides.length,
-        words: rawText.split(/\s+/).filter(Boolean).length,
-        titles: [...new Set(slides.map((s) => s.title.trim()))]
-          .filter((t) => t && !/^(slide|page) \d+$/i.test(t))
-          .slice(0, 40)
-          .map((t) => t.slice(0, 80)),
-      },
+      preview: deckPreview(rawText, slides),
     });
     const { text, wasTruncated } = prepareTextForLLM(rawText);
     const identity = await database.uploads.claim(studyContentHash(text), mode);
     if (identity.kind === 'existing') {
       await storeDocumentSlides(identity.document.document_id, slides);
-      await storeDocumentSource(
-        identity.document.document_id,
-        extension,
-        sourceBuffer,
-      );
+      for (const source of set.sources)
+        await storeDocumentSource(
+          identity.document.document_id,
+          source.fileType,
+          source.buffer,
+          source.part,
+          source.filename,
+        );
+      await clearParts(partIds);
       return NextResponse.json({
         ...identity.document,
         study_mode: mode,
@@ -117,11 +155,11 @@ async function prepareUpload(
     // while persisting the finished result, never while waiting on generation.
     emit({ type: 'progress', stage: 'generating' });
     const [content, graph] = await Promise.all([
-      generateFlashcardsAndQuiz(text, file.name, mode).then((content) => {
+      generateFlashcardsAndQuiz(text, set.filename, mode).then((content) => {
         emit({ type: 'progress', stage: 'generating', ready: 'materials' });
         return content;
       }),
-      generateConceptGraph(text, file.name).then((graph) => {
+      generateConceptGraph(text, set.filename).then((graph) => {
         emit({
           type: 'progress',
           stage: 'generating',
@@ -136,10 +174,11 @@ async function prepareUpload(
       const { data: document, error } = await db
         .from('documents')
         .insert({
-          filename: file.name,
-          file_type: extension,
+          filename: set.filename,
+          file_type: set.fileType,
           study_mode: mode,
-          file_size_bytes: file.size,
+          file_size_bytes: set.size,
+          part_count: decks.length,
           extracted_text_length: rawText.length,
           content: text,
           status: 'completed',
@@ -149,11 +188,15 @@ async function prepareUpload(
         .single();
       if (error) throw new Error(error.message);
       const rows = [
-        await db.from('document_sources').insert({
-          document_id: document.id,
-          file_type: extension,
-          data_base64: sourceBuffer.toString('base64'),
-        }),
+        await db.from('document_sources').insert(
+          set.sources.map((source) => ({
+            document_id: document.id,
+            file_type: source.fileType,
+            data_base64: source.buffer.toString('base64'),
+            part: source.part,
+            filename: source.filename,
+          })),
+        ),
         await db
           .from('document_slides')
           .insert(slides.map((s) => ({ ...s, document_id: document.id }))),
@@ -193,6 +236,7 @@ async function prepareUpload(
         if (result.error) throw new Error(result.error.message);
       return document;
     }, claim);
+    await clearParts(partIds);
     return NextResponse.json({
       document_id: doc.id,
       study_mode: mode,

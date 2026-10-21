@@ -12,11 +12,14 @@ export async function storeDocumentSource(
   documentId: string,
   fileType: DocumentFileType,
   buffer: Buffer,
+  part = 0,
+  filename = '',
 ) {
   const existing = await database
     .from('document_sources')
     .select('id')
     .eq('document_id', documentId)
+    .eq('part', part)
     .maybeSingle();
   if (existing.error) throw new Error('Could not check source file.');
   if (existing.data) return;
@@ -24,6 +27,8 @@ export async function storeDocumentSource(
     document_id: documentId,
     file_type: fileType,
     data_base64: buffer.toString('base64'),
+    part,
+    filename,
   });
   if (saved.error && saved.error.code !== '23505')
     throw new Error('Could not save source file.');

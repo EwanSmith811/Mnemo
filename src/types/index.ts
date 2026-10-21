@@ -9,6 +9,8 @@ export interface Document {
   quiz_question_count: number;
   topic_summary_count: number;
   concept_node_count: number;
+  /** How many decks the study set was built from. */
+  part_count: number;
   status: 'processing' | 'completed' | 'failed';
   error_message: string | null;
   created_at: string;

@@ -476,6 +476,49 @@
 .file-ticket label {
   cursor: pointer;
 }
+/* Several decks become one study set. */
+.file-tickets {
+  list-style: none;
+}
+.file-tickets .file-ticket + .file-ticket {
+  border-top: 1px solid var(--line);
+}
+.file-tickets:has(.file-ticket + .file-ticket) .file-ticket {
+  padding: 12px 16px;
+}
+.file-tickets:has(.file-ticket + .file-ticket) .file-ticket-type {
+  width: 40px;
+  height: 48px;
+  font-size: 11px;
+}
+.file-ticket-actions {
+  display: flex;
+  align-items: center;
+}
+.file-ticket-actions .icon-button {
+  width: 32px;
+  height: 32px;
+}
+.file-tickets-add {
+  padding: 4px 16px 12px;
+  border-top: 1px solid var(--line);
+}
+.file-tickets-add .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.upload-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.upload-step-label small {
+  color: var(--ink-3);
+  font-weight: 400;
+}
 .upload-footnote {
   margin-top: -14px;
   text-align: center;

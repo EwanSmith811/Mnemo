@@ -44,12 +44,18 @@ export default function DocumentList({
         const content = (
           <>
             <div className="document-card-top">
-              <span className="file-type mono">{doc.file_type}</span>
+              <span className="file-type mono">
+                {doc.part_count > 1 ? `${doc.part_count} decks` : doc.file_type}
+              </span>
               <span className="chip">
                 {doc.study_mode === 'nursing' ? 'Nursing' : 'Engineering'}
               </span>
             </div>
-            <h3>{doc.filename.replace(/\.[^.]+$/, '')}</h3>
+            <h3>
+              {doc.part_count > 1
+                ? doc.filename
+                : doc.filename.replace(/\.[^.]+$/, '')}
+            </h3>
             {doc.status === 'failed' ? (
               <p className="document-card-error">
                 {doc.error_message ||

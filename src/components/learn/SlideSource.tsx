@@ -39,12 +39,14 @@ function TextSlide({ title, text }: { title: string; text: string }) {
 function PdfPage({
   documentId,
   version,
+  part,
   number,
   zoom,
   onError,
 }: {
   documentId: string;
   version: number;
+  part: number;
   number: number;
   zoom: number;
   onError: (message: string) => void;
@@ -68,7 +70,7 @@ function PdfPage({
     if (!width || !canvas.current) return;
     let task: RenderTask | null = null;
     let live = true;
-    loadPdf(documentId, version)
+    loadPdf(documentId, version, part)
       .then((pdf) => {
         if (!live || !canvas.current) return;
         if (number > pdf.numPages)
@@ -88,7 +90,7 @@ function PdfPage({
       live = false;
       task?.cancel();
     };
-  }, [documentId, version, number, width, zoom, onError]);
+  }, [documentId, version, part, number, width, zoom, onError]);
 
   return (
     <div ref={box} className={`pdf-page ${ready ? 'is-ready' : ''}`}>
@@ -109,6 +111,7 @@ function PdfPage({
  */
 export default function SlideSource({
   documentId,
+  part = 0,
   number,
   kind,
   fallback,
@@ -116,6 +119,8 @@ export default function SlideSource({
   onAttached,
 }: {
   documentId: string;
+  /** The deck, in a study set built from several decks. */
+  part?: number;
   number: number;
   kind: 'slide' | 'page';
   /** The extracted slide, shown as a text version when no preview exists. */
@@ -131,11 +136,11 @@ export default function SlideSource({
   const [zoom, setZoom] = useState(1);
   const frame = useRef<HTMLIFrameElement>(null);
   const root = useRef<HTMLDivElement>(null);
-  const endpoint = `/api/learn/${documentId}/source`;
+  const endpoint = `/api/learn/${documentId}/source?part=${part}`;
 
   useEffect(() => {
     let live = true;
-    loadSource(documentId, version)
+    loadSource(documentId, version, part)
       .then((source) => {
         if (!live) return;
         setError('');
@@ -148,7 +153,7 @@ export default function SlideSource({
     return () => {
       live = false;
     };
-  }, [documentId, version]);
+  }, [documentId, version, part]);
 
   function openFull() {
     if (!pdf) return;
@@ -266,6 +271,7 @@ export default function SlideSource({
           <PdfPage
             documentId={documentId}
             version={version}
+            part={part}
             number={number}
             zoom={zoom}
             onError={setError}

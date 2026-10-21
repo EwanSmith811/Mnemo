@@ -6,6 +6,19 @@ const pdfParseFiles = [
   './node_modules/@napi-rs/canvas-linux-x64-gnu/**/*',
 ];
 
+// Legacy parsing runs outside the bundle in a Node worker. Ship its modules
+// explicitly so filesystem resolution also works in Vercel deployments.
+const uploadFiles = [
+  ...pdfParseFiles,
+  './src/lib/powerpoint-worker.mjs',
+  './node_modules/ppt-codec/**/*',
+  './node_modules/archive-codec/**/*',
+  './node_modules/byte-codec/**/*',
+  './node_modules/document-schema.js/**/*',
+  './node_modules/fflate/**/*',
+  './node_modules/zod/**/*',
+];
+
 const nextConfig: NextConfig = {
   serverExternalPackages: [
     'pdf-parse',
@@ -15,22 +28,13 @@ const nextConfig: NextConfig = {
     'reamkit',
   ],
   turbopack: { root: process.cwd() },
-  // Legacy parsing runs outside the bundle in a Node worker. Ship its modules
-  // explicitly so filesystem resolution also works in Vercel deployments.
   outputFileTracingIncludes: {
     // pdf-parse loads its own pdf.js worker by dynamic import and polyfills
     // DOMMatrix from a native canvas module; neither is found by tracing.
     '/api/learn/*/source': pdfParseFiles,
-    '/api/upload': [
-      ...pdfParseFiles,
-      './src/lib/powerpoint-worker.mjs',
-      './node_modules/ppt-codec/**/*',
-      './node_modules/archive-codec/**/*',
-      './node_modules/byte-codec/**/*',
-      './node_modules/document-schema.js/**/*',
-      './node_modules/fflate/**/*',
-      './node_modules/zod/**/*',
-    ],
+    '/api/upload': uploadFiles,
+    // Each deck of a study set is read here first.
+    '/api/upload/parts': uploadFiles,
   },
 };
 

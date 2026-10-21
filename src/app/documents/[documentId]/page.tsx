@@ -105,7 +105,9 @@ export default function DocumentPage() {
 
   const steps = progress ? studySteps(progress) : [];
   const next = progress ? nextAction(documentId, progress) : null;
-  const name = doc.filename.replace(/\.[^.]+$/, '');
+  // A study set's name is the learner's own, not a filename.
+  const name =
+    doc.part_count > 1 ? doc.filename : doc.filename.replace(/\.[^.]+$/, '');
   return (
     <main className="page dashboard">
       <BackLink href="/">Library</BackLink>
@@ -117,7 +119,11 @@ export default function DocumentPage() {
       <header className="dashboard-head">
         <div>
           <span className="eyebrow rise">
-            <b>{doc.file_type.toUpperCase()}</b>
+            <b>
+              {doc.part_count > 1
+                ? `${doc.part_count} decks`
+                : doc.file_type.toUpperCase()}
+            </b>
             {doc.study_mode === 'nursing' ? 'Nursing' : 'Engineering'} · Added{' '}
             {new Date(doc.created_at).toLocaleDateString()}
           </span>

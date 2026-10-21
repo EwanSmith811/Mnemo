@@ -49,6 +49,7 @@ test('slide threads preserve replies, replay retries, reject stale revisions and
     '001_mnemo.sql',
     '002_powerpoint_formats.sql',
     '006_slide_tutor.sql',
+    '008_combined_decks.sql',
   ])
     await pg.exec(
       await readFile(new URL('../db/' + file, import.meta.url), 'utf8'),

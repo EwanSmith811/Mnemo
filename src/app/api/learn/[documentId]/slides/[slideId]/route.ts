@@ -150,10 +150,21 @@ export async function POST(request: NextRequest, context: Context) {
       );
     const doc = await database
       .from('documents')
-      .select('filename')
+      .select('filename,part_count')
       .eq('id', slide.document_id)
       .single();
     if (doc.error) throw new Error('Document lookup failed');
+    // In a study set, name the deck the slide came from.
+    if (doc.data.part_count > 1) {
+      const deck = await database
+        .from('document_sources')
+        .select('filename')
+        .eq('document_id', slide.document_id)
+        .eq('part', slide.part)
+        .maybeSingle();
+      if (deck.data?.filename)
+        doc.data.filename = `${doc.data.filename} (deck: ${deck.data.filename})`;
+    }
     if ((slide.text + slide.notes).trim().length < 20)
       return NextResponse.json(
         {

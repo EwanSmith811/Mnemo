@@ -1292,3 +1292,24 @@ button[aria-current] .walk-thumb {
   flex-wrap: wrap;
   gap: 4px 16px;
 }
+
+/* Study sets: the rail is grouped by deck. */
+.walk-deck {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 16px 8px 6px;
+  overflow: hidden;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-3);
+}
+.walk-rail-list li:first-child .walk-deck {
+  padding-top: 6px;
+}
+.walk-deck span {
+  color: var(--accent);
+}

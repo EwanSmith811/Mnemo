@@ -13,21 +13,24 @@ export type Source =
 const sources = new Map<string, Promise<Source>>();
 const pdfs = new Map<string, Promise<PDFDocumentProxy>>();
 
-export function loadSource(documentId: string, version: number) {
-  const key = `${documentId}:${version}`;
+/** `part` picks the deck in a study set built from several decks. */
+export function loadSource(documentId: string, version: number, part = 0) {
+  const key = `${documentId}:${version}:${part}`;
   let source = sources.get(key);
   if (!source) {
-    source = fetch(`/api/learn/${documentId}/source`).then(async (r) => {
-      if (!r.ok)
-        throw new Error(
-          (await r.json().catch(() => null))?.error ||
-            'The original file couldn’t be loaded.',
-        );
-      const kind = r.headers.get('Content-Type')?.includes('presentation')
-        ? ('deck' as const)
-        : ('pdf' as const);
-      return { kind, data: await r.arrayBuffer() };
-    });
+    source = fetch(`/api/learn/${documentId}/source?part=${part}`).then(
+      async (r) => {
+        if (!r.ok)
+          throw new Error(
+            (await r.json().catch(() => null))?.error ||
+              'The original file couldn’t be loaded.',
+          );
+        const kind = r.headers.get('Content-Type')?.includes('presentation')
+          ? ('deck' as const)
+          : ('pdf' as const);
+        return { kind, data: await r.arrayBuffer() };
+      },
+    );
     // A failure is not cached, so a retry fetches again.
     source.catch(() => sources.delete(key));
     sources.set(key, source);
@@ -35,11 +38,11 @@ export function loadSource(documentId: string, version: number) {
   return source;
 }
 
-export function loadPdf(documentId: string, version: number) {
-  const key = `${documentId}:${version}`;
+export function loadPdf(documentId: string, version: number, part = 0) {
+  const key = `${documentId}:${version}:${part}`;
   let pdf = pdfs.get(key);
   if (!pdf) {
-    pdf = loadSource(documentId, version).then(async (source) => {
+    pdf = loadSource(documentId, version, part).then(async (source) => {
       if (source.kind !== 'pdf') throw new Error('Not a PDF');
       const pdfjs = await import('pdfjs-dist');
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';

@@ -13,30 +13,43 @@ import { Icon, PageLoading } from '../ui';
 
 const THUMB_WIDTH = 116;
 
-/** Small images of each page, drawn once the current slide has had a head start. */
-function useThumbnails(documentId: string, version: number, pages: number[]) {
-  const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
-  const key = pages.join(',');
+const thumbKey = (part: number, page: number) => `${part}:${page}`;
+
+/**
+ * Small images of each page, drawn once the current slide has had a head
+ * start. Keyed by deck and page, since a study set has several decks.
+ */
+function useThumbnails(
+  documentId: string,
+  version: number,
+  pages: { part: number; number: number }[],
+) {
+  const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const key = pages.map((p) => thumbKey(p.part, p.number)).join(',');
   useEffect(() => {
     if (!key) return;
     let live = true;
     const timer = setTimeout(async () => {
-      try {
-        const pdf = await loadPdf(documentId, version);
-        const canvas = document.createElement('canvas');
-        const made = new Map<number, string>();
-        for (const page of key.split(',').map(Number)) {
-          if (!live) return;
-          if (page > pdf.numPages || made.has(page)) continue;
-          await drawPage(pdf, page, canvas, THUMB_WIDTH);
-          made.set(page, canvas.toDataURL('image/jpeg', 0.82));
-          // Publish in small batches so the rail fills in as it goes.
-          if (made.size % 4 === 0) setThumbs(new Map(made));
+      const canvas = document.createElement('canvas');
+      const made = new Map<string, string>();
+      const wanted = key.split(',').map((k) => k.split(':').map(Number));
+      for (const part of [...new Set(wanted.map(([p]) => p))]) {
+        try {
+          const pdf = await loadPdf(documentId, version, part);
+          for (const [, page] of wanted.filter(([p]) => p === part)) {
+            if (!live) return;
+            const id = thumbKey(part, page);
+            if (page > pdf.numPages || made.has(id)) continue;
+            await drawPage(pdf, page, canvas, THUMB_WIDTH);
+            made.set(id, canvas.toDataURL('image/jpeg', 0.82));
+            // Publish in small batches so the rail fills in as it goes.
+            if (made.size % 4 === 0) setThumbs(new Map(made));
+          }
+        } catch {
+          // No PDF to draw from (PPTX or a missing file): titles stand in.
         }
-        if (live) setThumbs(new Map(made));
-      } catch {
-        // No PDF to draw from (PPTX or a missing file): titles stand in.
       }
+      if (live) setThumbs(new Map(made));
     }, 700);
     return () => {
       live = false;
@@ -70,11 +83,12 @@ export default function SlideWalkthrough({
   const [finished, setFinished] = useState(false);
   const [detail, setDetail] = useState<DocumentSlide | null>(null);
   const [sourceVersion, setSourceVersion] = useState(0);
+  const [decks, setDecks] = useState<{ part: number; filename: string }[]>([]);
   const prefetched = useRef(new Set<string>());
   const thumbs = useThumbnails(
     documentId,
     sourceVersion,
-    slides.map((s) => s.source_number),
+    slides.map((s) => ({ part: s.part, number: s.source_number })),
   );
 
   const save = useCallback(
@@ -108,6 +122,7 @@ export default function SlideWalkthrough({
         if (!r.ok) throw new Error(data.error || 'Could not load slides.');
         const list: SlideSummary[] = data.slides;
         setSlides(list);
+        setDecks(data.decks ?? []);
         setNotice(data.notice);
         const requested =
           initialSlide && initialSlide <= list.length ? initialSlide - 1 : null;
@@ -274,6 +289,12 @@ export default function SlideWalkthrough({
     .map((s, i) => ({ s, i }))
     .filter(({ s }) => !onlyShaky || s.status === 'shaky');
   const label = slide.kind === 'page' ? 'Page' : 'Slide';
+  // A study set built from several decks groups the rail by deck.
+  const multiDeck = decks.length > 1;
+  const deckName = (part: number) =>
+    (
+      decks.find((d) => d.part === part)?.filename || `Deck ${part + 1}`
+    ).replace(/\.[^.]+$/, '');
   return (
     <div className={`walkthrough ${railOpen ? 'rail-open' : ''}`}>
       <aside className="walk-rail" aria-label="Slides">
@@ -322,8 +343,14 @@ export default function SlideWalkthrough({
           )}
         </div>
         <ol className="walk-rail-list">
-          {visible.map(({ s, i }) => (
+          {visible.map(({ s, i }, n) => (
             <li key={s.id}>
+              {multiDeck && visible[n - 1]?.s.part !== s.part && (
+                <p className="walk-deck mono">
+                  <span>{String(s.part + 1).padStart(2, '0')}</span>
+                  {deckName(s.part)}
+                </p>
+              )}
               <button
                 aria-current={i === index ? 'true' : undefined}
                 className={
@@ -341,9 +368,12 @@ export default function SlideWalkthrough({
                 onClick={() => go(i)}
               >
                 <span className="walk-thumb">
-                  {thumbs.get(s.source_number) ? (
+                  {thumbs.get(thumbKey(s.part, s.source_number)) ? (
                     // eslint-disable-next-line @next/next/no-img-element -- a local data URL, nothing to optimize
-                    <img src={thumbs.get(s.source_number)} alt="" />
+                    <img
+                      src={thumbs.get(thumbKey(s.part, s.source_number))}
+                      alt=""
+                    />
                   ) : (
                     <span className="walk-thumb-text">{s.title}</span>
                   )}
@@ -400,6 +430,8 @@ export default function SlideWalkthrough({
               {slide.relevance === 'skip'
                 ? `${label} ${slide.source_number} · skipped`
                 : `${label} ${core.indexOf(slide) + 1} of ${core.length}`}
+              {multiDeck &&
+                ` · ${deckName(slide.part)}, ${label.toLowerCase()} ${slide.source_number}`}
             </span>
             <strong>{slide.title}</strong>
           </div>
@@ -487,6 +519,7 @@ export default function SlideWalkthrough({
             <div className="walk-source">
               <SlideSource
                 documentId={documentId}
+                part={slide.part}
                 number={slide.source_number}
                 kind={slide.kind}
                 fallback={detail?.id === slide.id ? detail : null}

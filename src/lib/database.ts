@@ -27,7 +27,10 @@ interface Tables {
     file_type: string;
     data_base64: string;
     preview_pdf_base64: string | null;
+    part: number;
+    filename: string;
   };
+  upload_parts: import('./upload-parts').UploadPart;
   document_slides: import('./document-slides').DocumentSlide;
   slide_explanations: {
     id: string;
@@ -63,6 +66,7 @@ const tables = new Set([
   'workbench_mastery',
   'workbench_sessions',
   'document_sources',
+  'upload_parts',
   'document_slides',
   'slide_explanations',
   'slide_threads',

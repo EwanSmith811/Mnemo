@@ -3,6 +3,11 @@ import { database } from '@/lib/database';
 import { convertPresentation, isStalePreview } from '@/lib/source-preview';
 export const maxDuration = 60;
 type Context = { params: Promise<{ documentId: string }> };
+/** Which deck of a study set; single-deck documents only have part 0. */
+const partOf = (request: NextRequest) => {
+  const part = Number(request.nextUrl.searchParams.get('part') ?? 0);
+  return Number.isInteger(part) && part >= 0 && part < 10 ? part : 0;
+};
 export async function GET(request: NextRequest, context: Context) {
   try {
     const { documentId } = await context.params;
@@ -10,6 +15,7 @@ export async function GET(request: NextRequest, context: Context) {
       .from('document_sources')
       .select()
       .eq('document_id', documentId)
+      .eq('part', partOf(request))
       .maybeSingle();
     if (row.error) throw new Error('Source lookup failed');
     if (!row.data)
@@ -125,10 +131,12 @@ export async function POST(request: NextRequest, context: Context) {
     } finally {
       await parser.destroy();
     }
+    const part = partOf(request);
     const slides = await database
       .from('document_slides')
       .select('source_number')
-      .eq('document_id', documentId);
+      .eq('document_id', documentId)
+      .eq('part', part);
     if (slides.error) throw new Error('Slide lookup failed');
     const last = Math.max(0, ...slides.data.map((s) => s.source_number));
     if (total < last)
@@ -142,6 +150,7 @@ export async function POST(request: NextRequest, context: Context) {
       .from('document_sources')
       .select('id')
       .eq('document_id', documentId)
+      .eq('part', part)
       .maybeSingle();
     if (existing.error) throw new Error('Source lookup failed');
     const saved = existing.data
@@ -153,6 +162,7 @@ export async function POST(request: NextRequest, context: Context) {
           document_id: documentId,
           file_type: 'pdf',
           data_base64: buffer.toString('base64'),
+          part,
         });
     if (saved.error) throw new Error('Source save failed');
     return NextResponse.json({ saved: true });
