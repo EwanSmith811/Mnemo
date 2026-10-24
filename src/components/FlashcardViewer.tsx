@@ -98,7 +98,7 @@ export default function FlashcardViewer({
     return (
       <section className="cards-done">
         <h2 className="display">
-          {reviewed} {reviewed === 1 ? 'review' : 'reviews'}, <em>done.</em>
+          {reviewed} {reviewed === 1 ? 'card' : 'cards'} reviewed
         </h2>
         <div className="cards-done-bars">
           {RATINGS.map(({ rating, label }) => (

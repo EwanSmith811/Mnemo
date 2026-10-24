@@ -353,7 +353,7 @@ export default function SlideLesson({
                     Study this slide anyway
                   </button>
                   <button className="ghost-button" onClick={onNext}>
-                    {isLast ? 'Finish the deck' : 'Skip to the next slide'} →
+                    {isLast ? 'Finish the deck' : 'Skip to the next slide'}
                   </button>
                 </div>
               </>
@@ -445,8 +445,7 @@ export default function SlideLesson({
             }
             onClick={onNext}
           >
-            {isLast ? 'Finish the deck' : 'Next slide'}{' '}
-            <span className="arrow">→</span>
+            {isLast ? 'Finish the deck' : 'Next slide'}
           </button>
           <span className="muted">
             or press <kbd className="kbd">→</kbd>

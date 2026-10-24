@@ -99,7 +99,7 @@ export default function ScoreDisplay({
           <div className="page-head-actions">
             {missed > 0 && (
               <button className="primary-button" onClick={onRetryMissed}>
-                Retry the {missed} you missed <span className="arrow">→</span>
+                Retry the {missed} you missed
               </button>
             )}
             <button

@@ -12,8 +12,9 @@
   padding: 28px;
 }
 .voice-mode h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 44px;
   line-height: 1;
 }
@@ -78,7 +79,9 @@
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-ink);
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 40px;
   transition: transform 0.5s var(--ease-spring);
 }
@@ -132,7 +135,8 @@
   max-width: 40ch;
   margin-top: 8vh;
   text-align: center;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 500;
   font-size: 30px;
   line-height: 1.15;
   color: var(--ink-3);

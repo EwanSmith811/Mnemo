@@ -432,9 +432,7 @@ export default function VerbalQuizPage() {
         <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
         <header className="page-head">
           <div>
-            <h1>
-              Say it <em>out loud.</em>
-            </h1>
+            <h1>Voice practice</h1>
             <p className="lede">
               If you can explain it clearly without notes, you understand it. If
               you stumble, you’ve found exactly what to study next.
@@ -459,9 +457,6 @@ export default function VerbalQuizPage() {
               Pick a topic and explain it as if to a classmate. Mnemo listens,
               then tells you what was right, what was missing, and what to fix.
             </p>
-            <span className="arrow" aria-hidden>
-              ↗
-            </span>
           </button>
           <button
             className="card voice-mode rise"
@@ -477,9 +472,6 @@ export default function VerbalQuizPage() {
               Mnemo asks questions from your deck one at a time and responds to
               each answer, like a study partner with the notes in front of them.
             </p>
-            <span className="arrow" aria-hidden>
-              ↗
-            </span>
           </button>
         </div>
         <div className="voice-voices">

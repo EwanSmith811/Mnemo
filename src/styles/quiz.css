@@ -12,8 +12,10 @@
   background: var(--accent-soft);
 }
 .quiz-retry strong {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
   font-size: 30px;
   line-height: 1.1;
 }
@@ -294,8 +296,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 32px;
   color: var(--tone);
 }
@@ -388,8 +391,10 @@
   animation: pop 0.6s var(--ease-spring) 0.4s both;
 }
 .quiz-score-number strong {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
   font-size: 84px;
   line-height: 1;
 }
@@ -404,7 +409,7 @@
   animation: rise 0.6s var(--ease-out) 0.3s both;
 }
 .quiz-score-copy h2 {
-  font-size: clamp(48px, 6vw, 80px);
+  font-size: clamp(34px, 4.4vw, 52px);
 }
 .quiz-score-copy p {
   color: var(--ink-2);

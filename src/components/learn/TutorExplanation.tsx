@@ -48,7 +48,7 @@ function Flow({ block }: { block: Extract<TutorBlock, { type: 'flow' }> }) {
           disabled={step === last}
           onClick={() => setStep(step + 1)}
         >
-          Next step →
+          Next step
         </button>
       </div>
     </figure>

@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
+import {
+  Atkinson_Hyperlegible_Next,
+  Atkinson_Hyperlegible_Mono,
+} from 'next/font/google';
 import '@/styles/tokens.css';
 import '@/styles/base.css';
 import '@/styles/ui.css';
@@ -18,24 +21,20 @@ import '@/styles/voice.css';
 import '@/styles/story.css';
 import Navigation from '@/components/Navigation';
 
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
-// A soft, slightly quirky serif for headlines; optical sizing keeps large
-// sizes open and the SOFT axis rounds its terminals.
-const fraunces = Fraunces({
-  variable: '--font-fraunces',
+const atkinson = Atkinson_Hyperlegible_Next({
+  variable: '--font-atkinson',
   style: ['normal', 'italic'],
-  axes: ['opsz', 'SOFT'],
+  subsets: ['latin', 'latin-ext'],
+});
+const atkinsonMono = Atkinson_Hyperlegible_Mono({
+  variable: '--font-atkinson-mono',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
   title: { default: 'Mnemo', template: '%s · Mnemo' },
   description:
-    'Turn a slide deck into a guided walkthrough, flashcards, quizzes and practice that make it stick.',
+    'Turn a lecture deck into a slide-by-slide walkthrough, flashcards, quizzes and practice problems.',
 };
 export const viewport: Viewport = {
   themeColor: [
@@ -54,7 +53,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable}`}
+      className={`${atkinson.variable} ${atkinsonMono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />

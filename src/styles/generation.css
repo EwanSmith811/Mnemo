@@ -16,17 +16,14 @@
   overflow: hidden;
   background: var(--gen-bg);
   color: var(--gen-ink);
-  animation: generation-in 0.9s var(--ease-out) both;
+  animation: generation-in 0.3s var(--ease-out) both;
 }
 .generation-screen:focus {
   outline: none;
 }
 @keyframes generation-in {
   from {
-    clip-path: circle(0% at 50% 50%);
-  }
-  to {
-    clip-path: circle(150% at 50% 50%);
+    opacity: 0;
   }
 }
 .generation-canvas {
@@ -35,42 +32,6 @@
   width: 100%;
   height: 100%;
 }
-.generation-vignette {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 62% 42%, rgb(125 149 255 / 0.1), transparent 38%),
-    radial-gradient(ellipse at center, transparent 40%, rgb(0 0 0 / 0.65)),
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0 3px,
-      rgb(255 255 255 / 0.012) 3px 4px
-    );
-}
-.generation-flash {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    circle at 62% 42%,
-    rgb(160 180 255 / 0.5),
-    transparent 60%
-  );
-  opacity: 0;
-}
-.phase-complete .generation-flash {
-  animation: generation-flash 1.6s var(--ease-out) 0.55s both;
-}
-@keyframes generation-flash {
-  10% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
 /* ── Top bar ───────────────────────────────────────────────── */
 .generation-top {
   position: relative;
@@ -83,7 +44,9 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 24px;
   /* The mark is always shown in its ink-theme colors on this screen. */
   --ink: var(--gen-ink);
@@ -146,16 +109,13 @@
   color: var(--gen-accent);
 }
 .generation-title {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(52px, 8vw, 116px);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: clamp(44px, 6.5vw, 88px);
   line-height: 1.02;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.03em;
 }
-.generation-title em {
-  font-style: italic;
-  color: var(--gen-accent);
-}
+
 .generation-word {
   display: inline-block;
   overflow: hidden;
@@ -252,14 +212,15 @@
   border-bottom: 1px solid var(--gen-line);
 }
 .generation-stats dt {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 10.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
   color: var(--gen-ink-3);
 }
 .generation-stats dd {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 30px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -285,8 +246,6 @@
   display: grid;
   gap: 10px;
   font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--gen-ink-3);
   transition: color 0.4s;
 }
@@ -357,7 +316,6 @@
   }
   .generation-stats dt {
     font-size: 9px;
-    letter-spacing: 0.1em;
   }
   .generation-stats dd {
     font-size: 22px;

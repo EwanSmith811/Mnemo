@@ -77,9 +77,7 @@ export default function SummariesPage() {
       <BackLink href={`/documents/${documentId}`}>Study plan</BackLink>
       <header className="page-head">
         <div>
-          <h1>
-            The deck, <em>in brief.</em>
-          </h1>
+          <h1>Topic summaries</h1>
         </div>
         <div className="page-head-actions">
           <GenerateDialog
@@ -173,7 +171,7 @@ export default function SummariesPage() {
                 </button>
               ) : (
                 <Link className="primary-button" href={`/quiz/${documentId}`}>
-                  Now test yourself <span className="arrow">↗</span>
+                  Take the quiz
                 </Link>
               )}
             </div>

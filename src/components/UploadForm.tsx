@@ -185,9 +185,7 @@ export default function UploadForm({
         />
       )}
       <fieldset disabled={busy} className="upload-step">
-        <legend>
-          <span className="mono">A</span> What are you studying?
-        </legend>
+        <legend>What are you studying?</legend>
         <div className="mode-options">
           {MODES.map(([value, name, description]) => (
             <label key={value} className="mode-option">
@@ -207,9 +205,7 @@ export default function UploadForm({
       </fieldset>
 
       <div className="upload-step">
-        <p className="upload-step-label">
-          <span className="mono">B</span> Add your decks
-        </p>
+        <p className="upload-step-label">Add your decks</p>
         <div
           className={`file-drop ${dragging ? 'is-dragging' : ''} ${files.length ? 'has-file' : ''}`}
           onDragOver={(e) => {
@@ -306,8 +302,8 @@ export default function UploadForm({
                 {dragging ? 'Release to add them' : 'Drop your slides here'}
               </strong>
               <small>
-                or <u>browse files</u> · PDF, PPTX, PPT, PPS, PPSX · up to{' '}
-                {MAX_DECKS} decks, 4 MB each
+                or <u>browse your files</u>. PDF, PPTX, PPT, PPS or PPSX, up to{' '}
+                {MAX_DECKS} decks at 4 MB each.
               </small>
             </label>
           )}
@@ -317,8 +313,7 @@ export default function UploadForm({
       {multi && (
         <div className="upload-step">
           <label className="upload-step-label" htmlFor="set-name">
-            <span className="mono">C</span> Name this study set{' '}
-            <small>(optional)</small>
+            Name this study set <small>(optional)</small>
           </label>
           <input
             id="set-name"
@@ -355,8 +350,7 @@ export default function UploadForm({
           <>
             {multi
               ? `Build one study set from ${files.length} decks`
-              : 'Build my study set'}{' '}
-            <span className="arrow">↗</span>
+              : 'Build my study set'}
           </>
         )}
       </button>

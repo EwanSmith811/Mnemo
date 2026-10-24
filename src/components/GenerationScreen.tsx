@@ -24,26 +24,26 @@ const STAGES = [
   {
     id: 'uploading',
     label: 'Upload',
-    title: ['Taking', 'the', 'deck', 'in.'],
+    title: ['Uploading', 'your', 'deck'],
     detail: 'Sending your file to Mnemo.',
   },
   {
     id: 'reading',
     label: 'Read',
-    title: ['Reading', 'every', 'slide.'],
+    title: ['Reading', 'the', 'slides'],
     detail: 'Extracting text, titles and speaker notes, page by page.',
   },
   {
     id: 'generating',
     label: 'Build',
-    title: ['Building', 'your', 'study', 'set.'],
+    title: ['Building', 'your', 'study', 'set'],
     detail:
       'Mapping concepts and writing flashcards, practice questions and topic summaries.',
   },
   {
     id: 'saving',
     label: 'Save',
-    title: ['Putting', 'it', 'all', 'in', 'place.'],
+    title: ['Saving', 'your', 'study', 'set'],
     detail: 'Saving everything and preparing the slide-by-slide walkthrough.',
   },
 ] as const;
@@ -55,27 +55,6 @@ const WORK = [
   'Checking the output before anything is saved',
 ];
 const pad = (n: number) => String(n).padStart(2, '0');
-
-function CountUp({ value }: { value: number | null }) {
-  const [shown, setShown] = useState(0);
-  const current = useRef(0);
-  useEffect(() => {
-    if (value === null) return;
-    const from = current.current;
-    const start = performance.now();
-    let frame = 0;
-    const step = (now: number) => {
-      const k = Math.min(1, (now - start) / 1100);
-      const eased = 1 - (1 - k) ** 4;
-      current.current = Math.round(from + (value - from) * eased);
-      setShown(current.current);
-      if (k < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [value]);
-  return <>{value === null ? '—' : shown.toLocaleString()}</>;
-}
 
 export default function GenerationScreen({
   filename,
@@ -203,9 +182,9 @@ export default function GenerationScreen({
   }, [complete, push]);
 
   const title = error
-    ? ['Something', 'interrupted', 'us.']
+    ? ['Upload', 'stopped']
     : complete
-      ? ['Ready', 'when', 'you', 'are.']
+      ? ['Study', 'set', 'ready']
       : current.title;
   return createPortal(
     <div
@@ -217,8 +196,6 @@ export default function GenerationScreen({
       className={`generation-screen phase-${phase} ${paused ? 'is-paused' : ''}`}
     >
       <canvas ref={canvas} className="generation-canvas" aria-hidden />
-      <div className="generation-vignette" aria-hidden />
-      <div className="generation-flash" aria-hidden />
 
       <header className="generation-top">
         <span className="generation-brand">
@@ -247,7 +224,7 @@ export default function GenerationScreen({
               ? '✓'
               : error
                 ? '!'
-                : `${pad(index + 1)} / ${pad(STAGES.length)}`}
+                : `Step ${index + 1} of ${STAGES.length}`}
           </span>
           <div role="status" aria-live="polite" aria-atomic="true">
             <h1
@@ -255,15 +232,7 @@ export default function GenerationScreen({
               key={title.join(' ')}
               className="generation-title"
             >
-              {title.map((word, i) => (
-                <span key={i}>
-                  <span className="generation-word">
-                    <span style={{ animationDelay: `${i * 70}ms` }}>
-                      {i === title.length - 1 ? <em>{word}</em> : word}
-                    </span>
-                  </span>{' '}
-                </span>
-              ))}
+              {title.join(' ')}
             </h1>
             <p className="generation-detail">
               {error ||
@@ -301,41 +270,29 @@ export default function GenerationScreen({
         <dl className="generation-stats" aria-label="What Mnemo found">
           <div>
             <dt>Slides</dt>
-            <dd>
-              <CountUp value={preview ? preview.slides : null} />
-            </dd>
+            <dd>{preview ? preview.slides.toLocaleString() : '—'}</dd>
           </div>
           <div>
             <dt>Words read</dt>
-            <dd>
-              <CountUp value={preview ? preview.words : null} />
-            </dd>
+            <dd>{preview ? preview.words.toLocaleString() : '—'}</dd>
           </div>
           <div>
             <dt>Concepts</dt>
             <dd>
-              <CountUp
-                value={
-                  result
-                    ? result.concept_node_count
-                    : concepts.length
-                      ? concepts.length
-                      : null
-                }
-              />
+              {result
+                ? result.concept_node_count
+                : concepts.length
+                  ? concepts.length
+                  : '—'}
             </dd>
           </div>
           <div>
             <dt>Flashcards</dt>
-            <dd>
-              <CountUp value={result ? result.flashcard_count : null} />
-            </dd>
+            <dd>{result ? result.flashcard_count : '—'}</dd>
           </div>
           <div>
             <dt>Questions</dt>
-            <dd>
-              <CountUp value={result ? result.quiz_question_count : null} />
-            </dd>
+            <dd>{result ? result.quiz_question_count : '—'}</dd>
           </div>
         </dl>
       </section>
@@ -357,9 +314,7 @@ export default function GenerationScreen({
               <span className="generation-rail-bar">
                 <i />
               </span>
-              <span className="mono">
-                {pad(i + 1)} {s.label}
-              </span>
+              <span>{s.label}</span>
             </li>
           ))}
         </ol>

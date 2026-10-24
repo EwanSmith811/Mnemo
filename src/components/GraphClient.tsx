@@ -1047,7 +1047,7 @@ export default function GraphClient() {
                           : `/workbench/${documentId}/${encodeURIComponent(current.group)}`
                       }
                     >
-                      Learn this topic ↗
+                      Learn this topic
                     </Link>
                     <h3>
                       Connected ideas <span>{connections.length}</span>
@@ -1063,10 +1063,7 @@ export default function GraphClient() {
                             onClick={() => focusNode(node.id)}
                           >
                             <span>{e.relationship}</span>
-                            <strong>
-                              {node.label}
-                              <span aria-hidden>↗</span>
-                            </strong>
+                            <strong>{node.label}</strong>
                           </button>
                         ) : null;
                       })}

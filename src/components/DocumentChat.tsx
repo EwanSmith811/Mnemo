@@ -197,9 +197,7 @@ export default function DocumentChat() {
           <div className="chat-thread">
             {!messages.length && (
               <div className="chat-empty">
-                <h1 className="display">
-                  Ask <em>anything.</em>
-                </h1>
+                <h1 className="display">Ask about this deck</h1>
                 <p className="lede">
                   Answers come from your deck first. When Mnemo goes beyond it,
                   it says so.
@@ -213,9 +211,6 @@ export default function DocumentChat() {
                       onClick={() => void send(s)}
                     >
                       {s}
-                      <span className="arrow" aria-hidden>
-                        ↗
-                      </span>
                     </button>
                   ))}
                 </div>

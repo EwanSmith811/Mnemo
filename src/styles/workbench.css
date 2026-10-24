@@ -19,11 +19,11 @@
   min-width: 0;
 }
 .workbench-heading h1 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(40px, 6vw, 68px);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: clamp(32px, 4.4vw, 52px);
   line-height: 1;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.03em;
   animation: rise 0.6s var(--ease-out) both;
 }
 .workbench-heading p {
@@ -53,8 +53,9 @@
   animation: rise 0.6s var(--ease-out) 0.1s both;
 }
 .workbench-next h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: clamp(30px, 4vw, 46px);
   line-height: 1;
   margin-bottom: 12px;
@@ -91,8 +92,9 @@
   margin-bottom: 16px;
 }
 .workbench-section-heading h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 34px;
 }
 .workbench-section-heading > span {
@@ -133,7 +135,8 @@
   transform: translate(2px, -2px);
 }
 .workbench-topic-number {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--accent);
 }
@@ -171,8 +174,9 @@
   gap: 10px;
 }
 .workbench-method h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 28px;
 }
 .workbench-method p {
@@ -195,8 +199,9 @@
   color: var(--ink-3);
 }
 .workbench-loading h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 30px;
   color: var(--ink);
   margin-bottom: 8px;
@@ -268,7 +273,8 @@
   border-radius: 50%;
   border: 1.5px solid var(--line-strong);
   background: var(--bg);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   transition:
     background-color 0.3s,
@@ -305,8 +311,9 @@
 }
 .lesson-main > h2,
 .lesson-reflection > h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: clamp(30px, 3.5vw, 44px);
   line-height: 1.1;
   margin-bottom: 18px;
@@ -404,7 +411,6 @@
 .lesson-glossary dd p {
   margin-top: 4px;
   color: var(--ink-3);
-  font-style: italic;
 }
 .lesson-actions {
   display: flex;
@@ -561,8 +567,9 @@
 }
 .lesson-feedback h3,
 .lesson-reference > h3 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 30px;
   line-height: 1.1;
   margin-bottom: 10px;
@@ -606,7 +613,10 @@
   color: var(--ink-3);
 }
 .lesson-results dd {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
   font-size: 48px;
   line-height: 1;
   margin-top: 6px;
@@ -640,7 +650,9 @@
   margin-bottom: 8px;
 }
 .lesson-review-plan p {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 30px;
   line-height: 1.1;
   margin-bottom: 10px;

@@ -114,9 +114,7 @@ export default function FlashcardsPage() {
         <>
           <header className="page-head">
             <div>
-              <h1 className="rise">
-                Recall it, <em>then</em> flip.
-              </h1>
+              <h1>Flashcards</h1>
               <p className="lede">
                 Cards come back on a spaced schedule, right before you’d forget
                 them. Missed cards return later in the same session.
@@ -180,8 +178,7 @@ export default function FlashcardsPage() {
                     <>
                       <h2 className="display">
                         <span className="mono">{due.length}</span>{' '}
-                        {due.length === 1 ? 'card is' : 'cards are'}{' '}
-                        <em>due.</em>
+                        {due.length === 1 ? 'card is' : 'cards are'} due
                       </h2>
                       <p>
                         {fresh
@@ -193,14 +190,12 @@ export default function FlashcardsPage() {
                         className="primary-button is-large"
                         onClick={() => start(due)}
                       >
-                        Start review <span className="arrow">→</span>
+                        Start review
                       </button>
                     </>
                   ) : (
                     <>
-                      <h2 className="display">
-                        All caught <em>up.</em>
-                      </h2>
+                      <h2 className="display">No cards due</h2>
                       <p>
                         {nextDue
                           ? `Next card is due in ${until(new Date(nextDue.next_review_date), now)}. Reviewing early gives your memory less to work against.`

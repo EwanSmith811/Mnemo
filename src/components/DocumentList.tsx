@@ -80,9 +80,7 @@ export default function DocumentList({
             <div className="document-card-foot">
               <span className="mono">{date(doc.created_at)}</span>
               {doc.status === 'completed' ? (
-                <span className="document-card-open">
-                  Study <span className="arrow">↗</span>
-                </span>
+                <span className="document-card-open">Study</span>
               ) : (
                 <span
                   className={`chip ${doc.status === 'failed' ? 'is-bad' : 'is-warn'}`}

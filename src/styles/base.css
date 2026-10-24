@@ -52,7 +52,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-weight: 560;
+  font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.015em;
   text-wrap: balance;
@@ -210,10 +210,8 @@ summary {
     transform: translateX(5px);
   }
 }
-/* Staggered entrance: set --i on siblings for a cascading reveal. */
 .rise {
-  animation: rise 0.7s var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 70ms);
+  animation: fade 0.3s var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -55,8 +55,9 @@
   animation: rise 0.55s var(--ease-out) both;
 }
 .reader-article h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: clamp(38px, 4.5vw, 60px);
   line-height: 1;
 }
@@ -67,14 +68,7 @@
   line-height: 1.75;
   color: var(--ink-2);
 }
-.reader-body p:first-child::first-letter {
-  float: left;
-  margin: 6px 10px 0 0;
-  font-family: var(--font-display);
-  font-size: 64px;
-  line-height: 0.8;
-  color: var(--accent);
-}
+
 .reader-pager {
   display: flex;
   justify-content: space-between;

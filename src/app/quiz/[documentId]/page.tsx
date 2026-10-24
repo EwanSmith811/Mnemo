@@ -156,9 +156,7 @@ export default function QuizPage() {
         <>
           <header className="page-head">
             <div>
-              <h1>
-                Find out what <em>stuck.</em>
-              </h1>
+              <h1>Quiz</h1>
               <p className="lede">
                 Pulling an answer out of memory is what makes it last. Every
                 question comes with an explanation.
@@ -196,9 +194,6 @@ export default function QuizPage() {
                     Retry the {missedQuestions.length} question
                     {missedQuestions.length === 1 ? '' : 's'} you missed
                   </strong>
-                  <span className="arrow" aria-hidden>
-                    →
-                  </span>
                 </button>
               )}
               <section className="quiz-builder card">
@@ -250,8 +245,7 @@ export default function QuizPage() {
                     disabled={!eligible.length}
                     onClick={() => play(shuffle(eligible).slice(0, length))}
                   >
-                    Start {Math.min(length, eligible.length)} questions{' '}
-                    <span className="arrow">→</span>
+                    Start {Math.min(length, eligible.length)} questions
                   </button>
                   <span className="muted">
                     {pool.length} in the pool

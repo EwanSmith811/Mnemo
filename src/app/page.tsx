@@ -2,20 +2,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import UploadForm from '@/components/UploadForm';
 import DocumentList from '@/components/DocumentList';
-import { Icon, stagger } from '@/components/ui';
-import HeroMap from '@/components/HeroMap';
+import { Icon } from '@/components/ui';
 import { Wordmark } from '@/components/Logo';
 import type { Document } from '@/types';
-
-const METHOD = [
-  [
-    'Walk through',
-    'A plain-language explanation and a visual for every slide.',
-  ],
-  ['Recall', 'Flashcards on a spaced schedule, before memories fade.'],
-  ['Test', 'Quizzes with explanations, and a retry for what you missed.'],
-  ['Apply', 'New problems that check you can use it, not just repeat it.'],
-] as const;
 
 async function loadDocuments(signal?: AbortSignal) {
   const res = await fetch('/api/documents', { signal });
@@ -61,57 +50,17 @@ export default function Home() {
   );
   return (
     <main className="library-page">
-      <section className="hero">
-        <div className="hero-copy">
-          <h1 className="display rise" style={stagger(1)}>
-            Every slide,
-            <br />
-            <em>understood.</em>
-          </h1>
-          <p className="lede rise" style={stagger(2)}>
-            Drop in a lecture deck. Mnemo walks you through it one slide at a
-            time, then turns it into flashcards, quizzes and practice that show
-            you what actually stuck.
-          </p>
-          <div className="hero-actions rise" style={stagger(3)}>
-            <a className="primary-button is-large" href="#upload">
-              Upload a deck <span className="arrow">↗</span>
-            </a>
-            {documents.length > 0 && (
-              <a className="ghost-button is-large" href="#library">
-                Open your library
-              </a>
-            )}
-          </div>
-        </div>
-        <figure className="hero-visual">
-          <HeroMap />
-          <figcaption>
-            Every deck becomes a map of how its ideas connect.
-          </figcaption>
-        </figure>
-      </section>
-
-      <ol className="method">
-        {METHOD.map(([title, text], i) => (
-          <li key={title} className="rise" style={stagger(i + 4)}>
-            <span className="mono">0{i + 1}</span>
-            <h2>{title}</h2>
-            <p>{text}</p>
-          </li>
-        ))}
-      </ol>
-
-      <section className="upload-section" id="upload">
-        <div className="upload-intro">
-          <h2 className="display">
-            Start with
-            <br />
-            <em>your deck.</em>
-          </h2>
+      <section className="intake" id="upload">
+        <div className="intake-copy">
+          <h1>Study a lecture deck</h1>
           <p>
-            PDF or PowerPoint, up to 4&nbsp;MB. Mnemo keeps the original slides
-            beside every explanation, so you can always check the source.
+            Upload your slides. Mnemo explains each one in plain language, then
+            builds flashcards, quizzes and practice problems from the same
+            material.
+          </p>
+          <p className="intake-note">
+            PDF or PowerPoint, up to 4&nbsp;MB per file. The original slide
+            stays next to every explanation so you can check the source.
           </p>
         </div>
         <UploadForm onUploadComplete={() => void refresh()} />
@@ -119,12 +68,9 @@ export default function Home() {
 
       <section className="library-section" id="library">
         <div className="library-head">
-          <div>
-            <h2 className="display">
-              Your decks{' '}
-              <span className="library-count mono">{documents.length}</span>
-            </h2>
-          </div>
+          <h2>
+            Your decks <span className="library-count">{documents.length}</span>
+          </h2>
           {documents.length > 3 && (
             <label className="search-field">
               <span className="sr-only">Search documents</span>

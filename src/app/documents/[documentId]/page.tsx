@@ -161,20 +161,8 @@ export default function DocumentPage() {
             <p>{next.detail}</p>
           </div>
           <Link className="primary-button is-large" href={next.href}>
-            {next.cta} <span className="arrow">↗</span>
+            {next.cta}
           </Link>
-          <svg className="next-up-art" viewBox="0 0 200 200" aria-hidden>
-            {[86, 64, 42].map((r, i) => (
-              <circle
-                key={r}
-                cx="100"
-                cy="100"
-                r={r}
-                style={{ animationDelay: `${i * -2}s` }}
-              />
-            ))}
-            <circle cx="100" cy="100" r="5" className="next-up-core" />
-          </svg>
         </section>
       )}
 
@@ -194,7 +182,7 @@ export default function DocumentPage() {
                     className={`plan-step ${step.done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}
                   >
                     <span className="plan-step-num mono">
-                      {step.done ? '✓' : `0${i + 1}`}
+                      {step.done ? '✓' : i + 1}
                     </span>
                     <h3>{step.title}</h3>
                     <p>{step.detail}</p>
@@ -221,23 +209,19 @@ export default function DocumentPage() {
 
       <section className="more-tools" aria-labelledby="more-title">
         <div className="section-title">
-          <h2 id="more-title">More ways in</h2>
-          <p>Use these whenever something doesn’t click.</p>
+          <h2 id="more-title">Other tools</h2>
+          <p>For when a topic isn’t clicking.</p>
         </div>
         <div className="more-grid">
           {MORE.map(([route, title, text], i) => (
             <Link
               key={route}
               href={`/${route}/${documentId}`}
-              className={`card more-tool more-tool-${route} rise`}
+              className="more-tool rise"
               style={stagger(i + 8)}
             >
-              <span className="more-tool-glyph" aria-hidden />
               <h3>{title}</h3>
               <p>{text}</p>
-              <span className="arrow" aria-hidden>
-                ↗
-              </span>
             </Link>
           ))}
         </div>

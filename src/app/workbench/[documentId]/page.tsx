@@ -115,8 +115,7 @@ export default function WorkbenchHub() {
                     ? 'Review this topic'
                     : recommended.session
                       ? 'Practice again'
-                      : 'Start learning'}{' '}
-                <span aria-hidden>↗</span>
+                      : 'Start learning'}
               </Link>
             </section>
           )}
@@ -174,7 +173,6 @@ export default function WorkbenchHub() {
                         </small>
                       )}
                   </div>
-                  <span aria-hidden>↗</span>
                 </Link>
               );
             })}
@@ -194,7 +192,7 @@ export default function WorkbenchHub() {
               lasting mastery.
             </p>
             <Link href={`/flashcards/${documentId}`}>
-              Use flashcards between sessions ↗
+              Use flashcards between sessions
             </Link>
           </aside>
         </>

@@ -252,7 +252,7 @@ export default function WorkbenchLesson({
               Try from memory before opening a hint. Needing help is a useful
               signal for your next review.
             </p>
-            <Link href={`/graph/${documentId}`}>See the concept map ↗</Link>
+            <Link href={`/graph/${documentId}`}>See the concept map</Link>
             <div className="lesson-save-status" role="status">
               {busy ? 'Saving your progress…' : 'Progress saved automatically'}
             </div>
@@ -289,7 +289,7 @@ export default function WorkbenchLesson({
                     disabled={busy}
                     onClick={() => act('start')}
                   >
-                    Close notes & practice <span aria-hidden>↗</span>
+                    Close notes & practice
                   </button>
                   <span>{items.length} questions · hints available</span>
                 </div>
@@ -500,8 +500,7 @@ export default function WorkbenchLesson({
                     >
                       {state.cursor === state.queue.length - 1
                         ? 'Reflect on this session'
-                        : 'Next question'}{' '}
-                      <span aria-hidden>↗</span>
+                        : 'Next question'}
                     </button>
                   </div>
                 )}
@@ -587,8 +586,7 @@ export default function WorkbenchLesson({
                   >
                     {nextTopic
                       ? 'Learn the next topic'
-                      : 'Back to learning path'}{' '}
-                    <span aria-hidden>↗</span>
+                      : 'Back to learning path'}
                   </Link>
                   <button
                     className="secondary-button"

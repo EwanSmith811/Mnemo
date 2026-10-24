@@ -459,15 +459,9 @@ export default function SlideWalkthrough({
               size={120}
             />
             <h2 className="display">
-              {rated === core.length ? (
-                <>
-                  Every slide, <em>checked.</em>
-                </>
-              ) : (
-                <>
-                  You reached <em>the end.</em>
-                </>
-              )}
+              {rated === core.length
+                ? 'You rated every slide'
+                : 'You reached the last slide'}
             </h2>
             <dl>
               <div>
@@ -492,7 +486,7 @@ export default function SlideWalkthrough({
                 className="primary-button is-large"
                 href={`/flashcards/${documentId}`}
               >
-                Review flashcards <span className="arrow">↗</span>
+                Review flashcards
               </Link>
               {counts.shaky > 0 && (
                 <button

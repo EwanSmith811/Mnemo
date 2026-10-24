@@ -23,9 +23,7 @@
     color 0.2s,
     transform 0.25s var(--ease-out);
 }
-.map-story-toggle:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
+
 .map-story-toggle svg {
   transition: transform 0.6s var(--ease-spring);
 }
@@ -246,12 +244,11 @@
   margin-bottom: 28px;
 }
 .story-title {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-style: italic;
+  font-family: var(--font-sans);
+  font-weight: 700;
   font-size: clamp(36px, 5vw, 60px);
   line-height: 1.04;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.03em;
   max-width: 18ch;
   animation: rise 0.7s var(--ease-out) both;
   transition: color 0.3s;
@@ -329,7 +326,8 @@ button.riff-n:hover {
   transform: scale(1.12);
 }
 .riff-line {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 500;
   font-size: clamp(19px, 1.9vw, 23px);
   line-height: 1.45;
   color: var(--ink);
@@ -339,7 +337,6 @@ button.riff-n:hover {
   padding: 0 2px;
   border-radius: 3px;
   color: inherit;
-  font-style: italic;
   font-weight: 560;
   background: linear-gradient(
     transparent 58%,
@@ -452,8 +449,8 @@ button.riff-n:hover {
   border-radius: var(--r-lg);
   background: var(--ink);
   color: var(--bg);
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
+  font-weight: 600;
   font-size: clamp(20px, 2vw, 26px);
   line-height: 1.35;
   animation: rise 0.6s var(--ease-out) both;
