@@ -4,6 +4,7 @@ import UploadForm from '@/components/UploadForm';
 import DocumentList from '@/components/DocumentList';
 import { Icon } from '@/components/ui';
 import { Wordmark } from '@/components/Logo';
+import HeroMap from '@/components/HeroMap';
 import type { Document } from '@/types';
 
 async function loadDocuments(signal?: AbortSignal) {
@@ -50,15 +51,40 @@ export default function Home() {
   );
   return (
     <main className="library-page">
+      <section className="hero">
+        <div className="hero-top">
+          <h1>Learn a lecture deck, slide by slide.</h1>
+          <div className="hero-aside">
+            <p>
+              Mnemo explains every slide in plain language, maps how the ideas
+              connect, and turns the deck into flashcards, quizzes and practice
+              problems.
+            </p>
+            <div className="hero-actions">
+              <a className="primary-button is-large" href="#upload">
+                Upload a deck
+              </a>
+              {documents.length > 0 && (
+                <a className="text-button" href="#library">
+                  Open your library
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+        <figure className="hero-figure">
+          <HeroMap />
+          <figcaption>
+            Sample concept map for a Signals and Systems lecture. Hover a
+            concept to trace its links.
+          </figcaption>
+        </figure>
+      </section>
+
       <section className="intake" id="upload">
         <div className="intake-copy">
-          <h1>Study a lecture deck</h1>
+          <h2>Add a deck</h2>
           <p>
-            Upload your slides. Mnemo explains each one in plain language, then
-            builds flashcards, quizzes and practice problems from the same
-            material.
-          </p>
-          <p className="intake-note">
             PDF or PowerPoint, up to 4&nbsp;MB per file. The original slide
             stays next to every explanation so you can check the source.
           </p>
